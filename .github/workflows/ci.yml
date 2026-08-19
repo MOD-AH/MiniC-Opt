@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.compiler }} on ubuntu-latest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: g++
+            cc: gcc
+            cxx: g++
+          - compiler: clang++
+            cc: clang
+            cxx: clang++
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        env:
+          CC:  ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run test suite
+        run: ./scripts/run_all.sh
+
+      # Enabled from Review 2, once the interpreter exists.
+      # This is the gate that makes optimization safe: the unoptimized and
+      # optimized programs must produce byte-identical output.
+      - name: Differential-execution gate
+        if: false
+        run: ./scripts/differential.sh
