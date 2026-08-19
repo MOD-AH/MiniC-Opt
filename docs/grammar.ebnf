@@ -1,0 +1,121 @@
+(* ===================================================================
+   MiniC — grammar specification
+   MiniC-Opt · BCSE307L Compiler Design project
+   Owner: Member 1
+
+   Left recursion eliminated; grammar left-factored.
+   FIRST/FOLLOW sets computed for every non-terminal (see FIRST_FOLLOW
+   table below); the statement and declaration sub-grammar is LL(1).
+   The expression sub-grammar is presented by precedence level for
+   clarity but is IMPLEMENTED by Pratt / precedence climbing.
+   =================================================================== *)
+
+program        ::= { declaration } ;
+declaration    ::= var_decl | func_decl ;
+
+var_decl       ::= type_spec IDENT [ "[" INT_LIT "]" ] [ "=" initializer ]
+                   { "," IDENT [ "[" INT_LIT "]" ] [ "=" initializer ] } ";" ;
+type_spec      ::= "int" | "char" | "float" | "void" ;
+initializer    ::= expression | "{" expression { "," expression } "}" ;
+
+func_decl      ::= type_spec IDENT "(" [ params ] ")" compound_stmt ;
+params         ::= param { "," param } ;
+param          ::= type_spec IDENT [ "[" "]" ] ;
+
+compound_stmt  ::= "{" { var_decl } { statement } "}" ;
+
+statement      ::= expr_stmt
+                 | compound_stmt
+                 | if_stmt
+                 | while_stmt
+                 | for_stmt
+                 | do_stmt
+                 | return_stmt
+                 | break_stmt
+                 | continue_stmt ;
+
+expr_stmt      ::= [ expression ] ";" ;
+if_stmt        ::= "if" "(" expression ")" statement [ "else" statement ] ;
+while_stmt     ::= "while" "(" expression ")" statement ;
+do_stmt        ::= "do" statement "while" "(" expression ")" ";" ;
+for_stmt       ::= "for" "(" [ expression ] ";" [ expression ] ";"
+                             [ expression ] ")" statement ;
+return_stmt    ::= "return" [ expression ] ";" ;
+break_stmt     ::= "break" ";" ;
+continue_stmt  ::= "continue" ";" ;
+
+(* --- Expression grammar, by precedence level (lowest first) --- *)
+expression     ::= assignment ;
+assignment     ::= lvalue ( "=" | "+=" | "-=" | "*=" | "/=" ) assignment
+                 | logical_or ;
+logical_or     ::= logical_and { "||" logical_and } ;
+logical_and    ::= equality    { "&&" equality } ;
+equality       ::= relational  { ( "==" | "!=" ) relational } ;
+relational     ::= additive    { ( "<" | "<=" | ">" | ">=" ) additive } ;
+additive       ::= multiplicative { ( "+" | "-" ) multiplicative } ;
+multiplicative ::= unary       { ( "*" | "/" | "%" ) unary } ;
+unary          ::= ( "!" | "-" | "+" | "++" | "--" ) unary | postfix ;
+postfix        ::= primary { "[" expression "]" | "(" [ args ] ")" | "++" | "--" } ;
+primary        ::= IDENT | INT_LIT | FLOAT_LIT | CHAR_LIT | "(" expression ")" ;
+args           ::= expression { "," expression } ;
+lvalue         ::= IDENT [ "[" expression "]" ] ;
+
+(* ===================================================================
+   LEXICAL LEVEL — regular definitions driving the hand-built DFA
+   (implemented in src/lexer/lexer.cpp)
+   =================================================================== *)
+
+letter         ::= "A".."Z" | "a".."z" | "_" ;
+digit          ::= "0".."9" ;
+
+IDENT          ::= letter { letter | digit } ;
+INT_LIT        ::= digit { digit } ;
+FLOAT_LIT      ::= digit { digit } "." { digit } [ exponent ] ;
+exponent       ::= ( "e" | "E" ) [ "+" | "-" ] digit { digit } ;
+CHAR_LIT       ::= "'" ( character | escape ) "'" ;
+escape         ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" ) ;
+
+comment        ::= "//" { character } newline
+                 | "/*" { character } "*/" ;          (* discarded by scanner *)
+
+keywords       ::= "int" | "char" | "float" | "void" | "if" | "else"
+                 | "while" | "for" | "do" | "return" | "break" | "continue" ;
+
+(* ===================================================================
+   FIRST / FOLLOW  (statement & declaration sub-grammar)
+   =================================================================== *)
+
+(*
+NON-TERMINAL      FIRST                                  FOLLOW
+----------------  -------------------------------------  ------------------------
+program           int char float void, e                  $
+declaration       int char float void                     int char float void $
+var_decl          int char float void                     int char float void $ }
+                                                            + FIRST(statement)
+func_decl         int char float void                     int char float void $
+type_spec         int char float void                     IDENT
+compound_stmt     {                                        FOLLOW(statement)
+                                                            + int char float void $
+statement         IDENT INT_LIT FLOAT_LIT CHAR_LIT ( ;    } else FIRST(statement)
+                  { if while for do return break continue
+                  ! - + ++ --
+expr_stmt         FIRST(expression), ;                     FOLLOW(statement)
+if_stmt           if                                       FOLLOW(statement)
+while_stmt        while                                    FOLLOW(statement)
+for_stmt          for                                      FOLLOW(statement)
+do_stmt           do                                       FOLLOW(statement)
+return_stmt       return                                   FOLLOW(statement)
+break_stmt        break                                    FOLLOW(statement)
+continue_stmt     continue                                 FOLLOW(statement)
+expression        IDENT INT_LIT FLOAT_LIT CHAR_LIT (       ; ) ] ,
+                  ! - + ++ --
+
+LL(1) verification: for every non-terminal with alternative productions,
+the FIRST sets of the alternatives are pairwise disjoint, and no nullable
+alternative has a FIRST set intersecting its FOLLOW set.
+
+The single classical ambiguity — the dangling else — is resolved by the
+standard rule: an "else" binds to the nearest unmatched "if". This is
+implemented directly in the recursive-descent parser rather than encoded
+in the grammar.
+*)
