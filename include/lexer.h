@@ -6,16 +6,11 @@
 // consulted after an identifier is recognised.
 #pragma once
 #include "token.h"
+#include "diagnostic.h"
 #include <vector>
 #include <string>
 
 namespace minic {
-
-struct Diagnostic {
-    int         line;
-    int         col;
-    std::string message;
-};
 
 class Lexer {
 public:

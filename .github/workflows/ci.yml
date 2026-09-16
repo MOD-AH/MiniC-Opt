@@ -36,9 +36,10 @@ jobs:
       - name: Run test suite
         run: ./scripts/run_all.sh
 
-      # Enabled from Review 2, once the interpreter exists.
+      # Enabled from Review 2 Step 6, now that the interpreter and the
+      # optimizer exist (P1-P3 as of Step 6, all of P1-P9 as of Review 3).
       # This is the gate that makes optimization safe: the unoptimized and
-      # optimized programs must produce byte-identical output.
+      # optimized programs must produce byte-identical output, both for
+      # the full pipeline and for every pass enabled completely alone.
       - name: Differential-execution gate
-        if: false
         run: ./scripts/differential.sh

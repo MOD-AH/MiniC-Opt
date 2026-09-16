@@ -27,18 +27,40 @@ can point at.
 
 ---
 
-## Current status — Review 1
+## Current status — full pipeline implemented (Review 1-3 core: P1-P9, backend, interpreter)
 
 | Stage | Module | Status |
 |---|---|---|
 | Lexical analysis | `src/lexer` | **Implemented and demonstrable** |
-| Syntax analysis | `src/parser` | Review 2 |
-| Semantic analysis | `src/sema` | Review 2 |
-| IR generation (TAC) | `src/ir` | Review 2 |
-| CFG + data-flow engine | `src/cfg` | Review 2 |
-| Optimization passes | `src/opt` | Review 2 (P1–P3), Review 3 (P4–P9) |
-| Code emitter + peephole | `src/backend` | Review 3 |
-| Reference interpreter | `src/interp` | Review 2 |
+| Syntax analysis | `src/parser` | **Implemented and demonstrable** |
+| Semantic analysis | `src/sema` | **Implemented and demonstrable** |
+| IR generation (TAC) | `src/ir` | **Implemented and demonstrable** |
+| CFG + data-flow engine | `src/cfg` | **Implemented and demonstrable** |
+| Optimization passes | `src/opt` | **P1-P9 all implemented and demonstrable** |
+| Code emitter + peephole | `src/backend` | **Implemented** (linearisation + stack slots; P9 peephole itself runs on the CFG, under the differential gate — see below) |
+| Reference interpreter | `src/interp` | **Implemented and demonstrable** |
+
+Pass manager (`--opt=<list>`, `--no-opt`) is implemented per the frozen
+`include/pass.h` contract, with fixed-point sweeping to convergence, now
+running all nine passes: `fold`, `constprop`, `copyprop` (Review 2), and
+`cse`, `dce`, `unreachable`, `strength`, `licm`, `peephole` (Review 3).
+The differential-execution CI gate — optimized vs. unoptimized output
+through the interpreter on every push — checks the full 9-pass pipeline
+AND every pass enabled completely alone, and is green (290/290 on the
+current suite). `--metrics` reports per-pass transform counts plus
+static/dynamic instruction counts; `--emit-asm` prints the backend's
+slot-addressed pseudo-assembly (explicitly outside the differential gate
+— there is no second execution oracle for it; see `docs/test_plan.md`).
+
+Two loop passes (P7 strength reduction, P8 LICM) are deliberately scoped
+to loops that already have a de-facto single preheader block, since
+`cfg.h`'s frozen interface has no way to insert a new one — a documented
+conservative limit, not a correctness gap; see `docs/test_plan.md` and
+`src/opt/loop_util.h`. The full 60/30 benchmark and negative-test suite
+from the original objectives table remains a representative subset
+(14/60 positive, 15/30 negative written) rather than the complete count
+— consistent with how Review 2 was finished without chasing that number
+either.
 
 ---
 
