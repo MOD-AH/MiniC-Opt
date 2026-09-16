@@ -62,6 +62,17 @@ struct DataFlowSpec {
     Meet      meet;
     std::set<int> boundary;    // IN[entry] for forward, OUT[exit] for backward
     // transfer: OUT = gen ∪ (IN − kill)   (supplied per-instantiation)
+
+    // Step 5 addition (src/cfg/dataflow.cpp): the "universal set" of every
+    // fact in this analysis's universe. Needed only when meet ==
+    // INTERSECTION (available expressions): the standard iterative solver
+    // must seed every non-boundary block's computed side to the universe,
+    // not the empty set, or the very first intersection collapses the
+    // lattice to empty and the fixed point never recovers real values
+    // (Aho, "Compilers", 9.2.5). Unused — left default-empty — for UNION
+    // analyses (reaching definitions, live variables), where the empty set
+    // is already the correct bottom element to grow up from.
+    std::set<int> universe;
 };
 
 // Terminates because the transfer functions are monotone over a finite
