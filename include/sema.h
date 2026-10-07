@@ -83,6 +83,10 @@ private:
     void wrapConversionIfNeeded(std::unique_ptr<Expr>& slot, TypeSpec target);
 
     static TypeSpec usualArith(TypeSpec a, TypeSpec b);
+    // Division/modulo by a literal 0 (IntLit 0, or FloatLit 0.0 for /)
+    // is statically detectable instead of deferring it to a runtime
+    // crash - diagnoses it the same way the other five categories do.
+    void checkConstantZeroDivisor(const BinaryExpr& n, const char* opSym);
     bool typesCompatible(TypeSpec a, TypeSpec b) const;
 
     // Conservative structural "does this statement return on every path it

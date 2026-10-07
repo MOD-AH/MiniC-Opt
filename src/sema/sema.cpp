@@ -65,6 +65,18 @@ TypeSpec Sema::usualArith(TypeSpec a, TypeSpec b) {
     return TypeSpec{BaseType::INT, false, -1};   // char promotes to int; int stays int
 }
 
+void Sema::checkConstantZeroDivisor(const BinaryExpr& n, const char* opSym) {
+    if (n.rhs->kind == NodeKind::IntLit) {
+        auto* lit = static_cast<const IntLit*>(n.rhs.get());
+        if (lit->value == 0)
+            sink_.add(n.line, n.col, std::string("division by zero in constant expression ('") + opSym + "' by literal 0)");
+    } else if (n.rhs->kind == NodeKind::FloatLit) {
+        auto* lit = static_cast<const FloatLit*>(n.rhs.get());
+        if (lit->value == 0.0)
+            sink_.add(n.line, n.col, std::string("division by zero in constant expression ('") + opSym + "' by literal 0.0)");
+    }
+}
+
 bool Sema::typesCompatible(TypeSpec a, TypeSpec b) const {
     if (a.isArray != b.isArray) return false;
     if (a.base == BaseType::VOID || b.base == BaseType::VOID) return a.base == b.base;
@@ -135,7 +147,12 @@ void Sema::visit(IndexExpr& n) {
     TypeSpec idxType  = checkExpr(*n.index);
     if (!baseType.isArray)
         sink_.add(n.line, n.col, "subscripted value is not an array");
-    if (idxType.isArray || idxType.base == BaseType::FLOAT)
+    // VOID was missing here (every other scalar-context check in this
+    // file — BinaryExpr, AssignExpr, UnaryExpr inc/dec — excludes it).
+    // a[print_int(1)] used to pass this check, and IRGen then handed
+    // LOAD_INDEX/STORE_INDEX the NONE-kind, empty-name operand a void
+    // call produces as its "value".
+    if (idxType.isArray || idxType.base == BaseType::FLOAT || idxType.base == BaseType::VOID)
         sink_.add(n.line, n.col, "array index must be an integral expression");
     n.resolvedType = TypeSpec{baseType.base, false, -1};
 }
@@ -228,7 +245,25 @@ void Sema::visit(BinaryExpr& n) {
             n.resolvedType = TypeSpec{BaseType::INT, false, -1};
             break;
         }
-        default: {   // ADD SUB MUL DIV MOD
+        case BinOp::MOD: {
+            // C restricts % to integral operands; it was routed through
+            // the same usualArith path as the other arithmetic ops with
+            // no additional check, so `5.5 % 2.0` passed sema clean and
+            // reached the interpreter as a float MOD, which has no
+            // defined meaning here.
+            if (lt.base == BaseType::FLOAT || rt.base == BaseType::FLOAT)
+                sink_.add(n.line, n.col, "operands of '%' must be integral");
+            checkConstantZeroDivisor(n, "%");
+            TypeSpec result = usualArith(lt, rt);
+            wrapConversionIfNeeded(n.lhs, result);
+            wrapConversionIfNeeded(n.rhs, result);
+            n.resolvedType = result;
+            break;
+        }
+        case BinOp::DIV:
+            checkConstantZeroDivisor(n, "/");
+            [[fallthrough]];
+        default: {   // ADD SUB MUL DIV
             TypeSpec result = usualArith(lt, rt);
             wrapConversionIfNeeded(n.lhs, result);
             wrapConversionIfNeeded(n.rhs, result);
