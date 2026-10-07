@@ -16,31 +16,59 @@ namespace minic {
 CFG::CFG(const IRFunction& fn) : fnName_(fn.name) {
     const std::vector<Quad>& code = fn.code;
     entry_ = 0;
+
+    // A dedicated, always-empty entry block that by construction can
+    // never have a predecessor. Without it, a function whose very
+    // first quad is also a loop header's LABEL (e.g. a do-while with
+    // nothing before it, or just an uninitialized first local) makes
+    // entry_ coincide with that header, so the loop's own back edge
+    // becomes an incoming edge on the entry block. solve()'s forward
+    // boundary condition (dataflow.cpp) then force-overwrites IN[entry]
+    // to the boundary value on every iteration, silently discarding
+    // whatever the back edge would have contributed — the header never
+    // sees its own loop-carried facts. A real ENTRY node with no preds
+    // (Aho et al. 8.4) sidesteps this: the header becomes an ordinary
+    // interior block and is meet-computed like any other.
+    BasicBlock entryB;
+    entryB.id = 0;
+    blocks_.push_back(std::move(entryB));
     if (code.empty()) return;
 
     std::set<size_t> leaderSet;
     leaderSet.insert(0);
     for (size_t i = 0; i < code.size(); ++i) {
         if (code[i].op == Op::LABEL) leaderSet.insert(i);
-        if ((code[i].op == Op::GOTO || code[i].op == Op::IF_FALSE) && i + 1 < code.size())
+        // RET ends a block same as GOTO/IF_FALSE: whatever follows it
+        // (dead code after an early return, or just the next sibling
+        // statement in source that never runs) must start a new block
+        // rather than being treated as though it executes straight
+        // through — otherwise a block can contain an instruction after
+        // its own exit, and every pass that assumes straight-line
+        // execution within a block (CSE's availability set in
+        // particular) can merge facts across what's really two
+        // disconnected pieces of code.
+        if ((code[i].op == Op::GOTO || code[i].op == Op::IF_FALSE || code[i].op == Op::RET)
+            && i + 1 < code.size())
             leaderSet.insert(i + 1);
     }
     std::vector<size_t> leaders(leaderSet.begin(), leaderSet.end());   // std::set is already sorted
 
     std::unordered_map<std::string, int> labelToBlock;
-    blocks_.reserve(leaders.size());
+    blocks_.reserve(leaders.size() + 1);
     for (size_t bi = 0; bi < leaders.size(); ++bi) {
         size_t start = leaders[bi];
         size_t end   = (bi + 1 < leaders.size()) ? leaders[bi + 1] : code.size();
         BasicBlock b;
-        b.id = static_cast<int>(bi);
+        b.id = static_cast<int>(bi) + 1;   // +1: id 0 is the synthetic entry block above
         b.code.assign(code.begin() + static_cast<long>(start), code.begin() + static_cast<long>(end));
         if (!b.code.empty() && b.code.front().op == Op::LABEL)
             labelToBlock[b.code.front().result.name] = b.id;
         blocks_.push_back(std::move(b));
     }
+    blocks_[0].succs.push_back(1);   // entry falls straight through into the real first block
+    blocks_[1].preds.push_back(0);
 
-    for (size_t bi = 0; bi < blocks_.size(); ++bi) {
+    for (size_t bi = 1; bi < blocks_.size(); ++bi) {
         BasicBlock& b = blocks_[bi];
         if (b.code.empty()) continue;
         const Quad& last = b.code.back();
@@ -57,7 +85,7 @@ CFG::CFG(const IRFunction& fn) : fnName_(fn.name) {
             b.succs.push_back(static_cast<int>(bi + 1));   // straight-line fallthrough into the next leader
         }
     }
-    for (size_t bi = 0; bi < blocks_.size(); ++bi)
+    for (size_t bi = 1; bi < blocks_.size(); ++bi)
         for (int s : blocks_[bi].succs)
             blocks_[static_cast<size_t>(s)].preds.push_back(static_cast<int>(bi));
 }
