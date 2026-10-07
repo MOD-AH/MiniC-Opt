@@ -283,8 +283,19 @@ void Sema::visit(AssignExpr& n) {
             sink_.add(n.line, n.col, "cannot assign to an array; assign to an element instead");
         else if (!typesCompatible(tt, vt))
             sink_.add(n.line, n.col, "type mismatch in assignment");
-        else
+        else if (n.op == AssignOp::ASSIGN)
             wrapConversionIfNeeded(n.value, tt);
+        // For += -= *= /=, C computes `x = (T)(x op y)`: the usual
+        // arithmetic conversion applies to the OPERATION (x's current
+        // type against y's), and only the final RESULT narrows back to
+        // T. Converting y to T here, before the op, narrows the wrong
+        // operand at the wrong time — `int x=5; float y=-2.9; x+=y;`
+        // should give 2 (5 + -2.9 = 2.1, truncated), not 3 (5 + (int)-2.9
+        // = 5 + -2). Leaving n.value at its own natural type and letting
+        // IRGen narrow the op's result instead (see IRGen::visit(AssignExpr&))
+        // fixes this; it's a no-op whenever T already matches the wider
+        // type (the common case), which is why hand-traced examples with
+        // same-type operands never caught it.
     }
     n.resolvedType = tt;
 }

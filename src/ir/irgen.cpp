@@ -268,6 +268,26 @@ void IRGen::visit(AssignExpr& n) {
     // +=/-=/*=//=) is read afterward, right before the store.
     Operand v = genExpr(*n.value);
 
+    // For a compound op, Sema deliberately leaves n.value at its own
+    // natural type rather than pre-narrowing it to the target's type
+    // (see Sema::visit(AssignExpr&)) — the operation itself must run at
+    // whatever type the usual arithmetic conversions give x op y, and
+    // only the RESULT narrows back to the target's type. The interpreter
+    // already picks FLOAT vs INT per-operation from each Value's actual
+    // kind, so leaving v untouched makes the op itself correct; this
+    // helper is the "narrow the result back down" half of that — the
+    // one spot it's actually needed is int/char target, float value.
+    auto narrowResultIfNeeded = [&](Operand t) {
+        bool targetIsFloat = (n.target->resolvedType.base == BaseType::FLOAT);
+        bool valueIsFloat  = (n.value->resolvedType.base == BaseType::FLOAT);
+        if (!targetIsFloat && valueIsFloat) {
+            Operand narrowed = newTemp();
+            emit(Op::TO_INT, t, {}, narrowed, n.line);
+            return narrowed;
+        }
+        return t;
+    };
+
     if (n.target->kind == NodeKind::IdentExpr) {
         auto& id = static_cast<IdentExpr&>(*n.target);
         Operand var = resolveName(id.name, id.line, id.col);
@@ -277,6 +297,7 @@ void IRGen::visit(AssignExpr& n) {
         } else {
             Operand t = newTemp();
             emit(assignOpToIr(n.op), var, v, t, n.line);
+            t = narrowResultIfNeeded(t);
             emit(Op::COPY, t, {}, var, n.line);
             lastValue_ = t;
         }
@@ -292,6 +313,7 @@ void IRGen::visit(AssignExpr& n) {
             emit(Op::LOAD_INDEX, base, ix, oldT, n.line);
             Operand t = newTemp();
             emit(assignOpToIr(n.op), oldT, v, t, n.line);
+            t = narrowResultIfNeeded(t);
             emit(Op::STORE_INDEX, ix, t, base, n.line);
             lastValue_ = t;
         }
@@ -483,6 +505,18 @@ void IRGen::genVarDeclInto(VarDecl& n, bool isGlobal) {
         emit(Op::ALLOC_ARRAY, intConst(size), {}, slot, n.line);
         for (size_t i = 0; i < vals.size(); ++i)
             emit(Op::STORE_INDEX, intConst(static_cast<long long>(i)), vals[i], slot, n.line);
+        // `int a[5] = {1, 2};` is legal MiniC (Sema only rejects too MANY
+        // initializers, never too few) and C requires the remaining
+        // elements to be zero-initialized. ALLOC_ARRAY itself makes no
+        // such promise — it just reserves N slots — so without this loop
+        // indices [vals.size(), size) were left however the interpreter's
+        // array allocation happens to leave them, which is deterministic
+        // today (std::vector value-init already zeroes them) but was
+        // never an explicit, IR-level guarantee the way every other
+        // "no undefined behavior to reproduce differentially" spot in
+        // this function is.
+        for (int i = static_cast<int>(vals.size()); i < size; ++i)
+            emit(Op::STORE_INDEX, intConst(i), zeroOf(TypeSpec{n.type.base, false, -1}), slot, n.line);
     } else {
         bool hasInit = static_cast<bool>(n.init);
         Operand val;
