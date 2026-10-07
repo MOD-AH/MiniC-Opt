@@ -57,7 +57,19 @@ Value Interp::applyBinary(Op op, const Value& a, const Value& b) {
         case Op::MUL: return useFloat ? Value::makeFloat(a.asDouble() * b.asDouble())
                                        : Value::makeInt(a.ival * b.ival);
         case Op::DIV:
-            if (useFloat) return Value::makeFloat(a.asDouble() / b.asDouble());
+            // b.ival==0 only tests the int field; for a float operand the
+            // actual divisor lives in b.fval and could be 0.0 while
+            // b.ival is still its default 0 OR some leftover int value —
+            // checking b.ival here skipped the zero-check entirely
+            // whenever either operand was FLOAT, so e.g. 3.0/0.0 silently
+            // produced inf instead of the RuntimeError this file's own
+            // header (interp.h) documents run() as throwing on "division
+            // ... by zero". Check the value actually being divided by,
+            // not always the int field.
+            if (useFloat) {
+                if (b.asDouble() == 0.0) throw RuntimeError{"division by zero"};
+                return Value::makeFloat(a.asDouble() / b.asDouble());
+            }
             if (b.ival == 0) throw RuntimeError{"division by zero"};
             return Value::makeInt(a.ival / b.ival);
         case Op::MOD:
@@ -78,7 +90,17 @@ Value Interp::applyBinary(Op op, const Value& a, const Value& b) {
 
 Value Interp::callBuiltin(const std::string& name, std::vector<Value>& args) {
     if (name == "print_int") {
-        std::cout << (args.empty() ? 0 : args[0].ival) << "\n";
+        // asDouble()-style kind-awareness, but for an int-shaped builtin:
+        // read .ival directly for an INT value, otherwise fall back to
+        // the float field truncated toward zero. Previously read .ival
+        // unconditionally, so a FLOAT Value reaching here (e.g. from a
+        // missing TO_INT conversion) silently printed 0 (.ival's default)
+        // instead of the real value. Sema/IRGen shouldn't let this
+        // happen today, but print_float already handled the symmetric
+        // case correctly (via asDouble()) and these two didn't.
+        long long v = args.empty() ? 0
+            : (args[0].kind == Value::Kind::FLOAT ? static_cast<long long>(args[0].fval) : args[0].ival);
+        std::cout << v << "\n";
         return Value::makeInt(0);
     }
     if (name == "print_float") {
@@ -86,12 +108,21 @@ Value Interp::callBuiltin(const std::string& name, std::vector<Value>& args) {
         return Value::makeInt(0);
     }
     if (name == "print_char") {
-        std::cout << static_cast<char>(args.empty() ? 0 : args[0].ival);
+        long long v = args.empty() ? 0
+            : (args[0].kind == Value::Kind::FLOAT ? static_cast<long long>(args[0].fval) : args[0].ival);
+        std::cout << static_cast<char>(v);
         return Value::makeInt(0);
     }
     if (name == "read_int") {
         long long v = 0;
-        std::cin >> v;
+        if (!(std::cin >> v)) {
+            // cin's failbit is sticky: once one read fails (EOF or
+            // malformed input), every later read_int() in the same run
+            // silently returned 0 forever with no way for a MiniC program
+            // to detect it. Surface it as a RuntimeError instead, same as
+            // every other interpreter-level failure mode here.
+            throw RuntimeError{"read_int: end of input or malformed integer"};
+        }
         return Value::makeInt(v);
     }
     throw RuntimeError{"call to undefined function '" + name + "'"};
@@ -116,13 +147,30 @@ Interp::ExecResult Interp::execCode(const std::vector<Quad>& code, std::unordere
             case Op::NOP:
                 break;
 
-            case Op::GOTO:
-                pc = labelMap.at(q.result.name);
+            case Op::GOTO: {
+                // labelMap.at() throws std::out_of_range on a miss, not
+                // Interp::RuntimeError — a caller that only catches
+                // RuntimeError (as this class's documented error surface
+                // implies it should) would see that escape uncaught. A
+                // dangling jump target can only come from an optimizer-
+                // pass bug (a dropped/renamed LABEL with a stale jump
+                // still pointing at the old name), so make it a clean,
+                // catchable RuntimeError rather than a crash.
+                auto it = labelMap.find(q.result.name);
+                if (it == labelMap.end())
+                    throw RuntimeError{"internal error: jump to undefined label '" + q.result.name + "'"};
+                pc = it->second;
                 continue;
+            }
 
             case Op::IF_FALSE: {
                 Value v = evalOperand(q.arg1, frame);
-                if (!v.truthy()) { pc = labelMap.at(q.result.name); continue; }
+                if (!v.truthy()) {
+                    auto it = labelMap.find(q.result.name);
+                    if (it == labelMap.end())
+                        throw RuntimeError{"internal error: jump to undefined label '" + q.result.name + "'"};
+                    pc = it->second; continue;
+                }
                 break;
             }
 
@@ -191,6 +239,17 @@ Interp::ExecResult Interp::execCode(const std::vector<Quad>& code, std::unordere
             case Op::CALL: {
                 const std::string& callee = q.arg1.name;
                 long long argc = q.arg2.ival;
+                // A mismatched PARAM/CALL count (only reachable through an
+                // optimizer-pass bug — e.g. a PARAM quad deleted without
+                // updating the CALL's stored argc) used to walk an
+                // iterator before pendingParams_.begin(), which is
+                // undefined behaviour, instead of the diagnosable error
+                // this interpreter is supposed to be able to give for
+                // exactly this class of pass bug.
+                if (argc < 0 || static_cast<size_t>(argc) > pendingParams_.size())
+                    throw RuntimeError{"internal error: call to '" + callee + "' has " +
+                        std::to_string(argc) + " pending argument(s), only " +
+                        std::to_string(pendingParams_.size()) + " available"};
                 std::vector<Value> args;
                 if (argc > 0) {
                     args.assign(pendingParams_.end() - argc, pendingParams_.end());
