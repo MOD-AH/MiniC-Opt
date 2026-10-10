@@ -38,7 +38,7 @@ no()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; fail=$((fail+1)); }
 ALL_PASSES="fold,constprop,copyprop,cse,dce,unreachable,strength,licm,peephole"
 
 hdr "Differential-execution gate — unoptimized vs. --opt=$ALL_PASSES"
-for f in tests/programs/*.c tests/opt/*.c; do
+for f in tests/programs/*.c tests/opt/*.c tests/boundary/*.c; do
   name="$(basename "$f")"
   base="${f%.c}"
   unopt="$(mktemp)"; opt="$(mktemp)"
@@ -60,7 +60,7 @@ done
 
 hdr "Differential-execution gate — each pass enabled alone"
 for passname in $(echo "$ALL_PASSES" | tr ',' ' '); do
-  for f in tests/programs/*.c tests/opt/*.c; do
+  for f in tests/programs/*.c tests/opt/*.c tests/boundary/*.c; do
     name="$(basename "$f") [--opt=$passname]"
     unopt="$(mktemp)"; opt="$(mktemp)"
     timeout 5 "$BIN" --run "$f"                   > "$unopt" 2>/dev/null
