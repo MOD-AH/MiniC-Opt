@@ -24,9 +24,25 @@ ok()  { printf '  \033[32mPASS\033[0m  %s\n' "$1"; pass=$((pass+1)); }
 no()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; fail=$((fail+1)); }
 
 hdr "Building"
-cmake -B build -DCMAKE_BUILD_TYPE=Release > /dev/null || { echo "cmake failed"; exit 1; }
-cmake --build build --parallel > /dev/null   || { echo "build failed"; exit 1; }
-echo "  build/minic ready"
+# CMake is the project's build system and what CI uses. It is not installed
+# everywhere, though (stock macOS has no cmake), and the test suite is far
+# more useful than the build system it was configured with — so fall back to
+# compiling the sources directly rather than refusing to run at all. The
+# source list is globbed, not hardcoded, so a newly added pass needs no edit
+# here: every .cpp under src/ is exactly the minic target (verified against
+# CMakeLists.txt).
+if command -v cmake > /dev/null 2>&1; then
+  cmake -B build -DCMAKE_BUILD_TYPE=Release > /dev/null || { echo "cmake configure failed"; exit 1; }
+  cmake --build build --parallel           > /dev/null || { echo "build failed"; exit 1; }
+  echo "  build/minic ready (cmake)"
+else
+  mkdir -p build
+  # shellcheck disable=SC2046
+  ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Wpedantic -Iinclude \
+      $(find src -name '*.cpp' | sort) -o "$BIN" \
+      || { echo "direct build failed"; exit 1; }
+  echo "  build/minic ready (cmake not found — compiled directly)"
+fi
 
 hdr "Positive suite — lexer must report zero errors"
 for f in tests/programs/*.c; do

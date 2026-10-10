@@ -1,8 +1,10 @@
 // MiniC-Opt — driver
 //
-// Review 2 status: the lexer and parser are implemented and demonstrable
-// (--dump-tokens, --dump-ast). Later phases (semantic analysis, IR, CFG,
-// optimizer, interpreter) are stubbed and report their planned milestone.
+// The full pipeline is implemented: lexer, parser, semantic analysis, TAC
+// generation, reference interpreter, CFG and data-flow engine, the nine
+// optimization passes P1-P9 behind a fixed-point pass manager, and the
+// slot-addressed pseudo-assembly backend. Each stage has a corresponding
+// --dump-*/--check/--run flag below; see usage() for the full list.
 #include "lexer.h"
 #include "parser.h"
 #include "ast_printer.h"
@@ -404,7 +406,8 @@ int main(int argc, char** argv) {
     OptConfig opt;
     for (const std::string& a : args) {
         if (a == "--help")    { usage(); return 0; }
-        if (a == "--version") { std::cout << "MiniC-Opt 0.1.0 (Review 1 — lexer)\n"; return 0; }
+        // Version literal kept in step with project(... VERSION) in CMakeLists.txt.
+        if (a == "--version") { std::cout << "MiniC-Opt 0.1.0 (full pipeline: lexer, parser, sema, IR, CFG, P1-P9, backend)\n"; return 0; }
         if (a == "--no-opt")  { opt.requested = true; opt.noOpt = true; continue; }
         if (a.rfind("--opt=", 0) == 0) {
             opt.requested = true;
@@ -432,8 +435,7 @@ int main(int argc, char** argv) {
     if (mode == "--emit-asm") return dumpAsm(file, opt);
     if (mode == "--metrics") return printMetrics(file, opt);
 
-    std::cerr << "minic: '" << mode << "' is not implemented yet.\n"
-              << "       Review 2 delivers the lexer and parser; run --help "
-                 "to see the milestone for each stage.\n";
+    std::cerr << "minic: unknown option '" << mode << "'.\n"
+              << "       Run --help to see the available options.\n";
     return 3;
 }

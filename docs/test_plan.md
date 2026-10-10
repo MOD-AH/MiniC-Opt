@@ -8,8 +8,8 @@ category below is the project's primary correctness guarantee.
 
 | Category | Count | What is tested | Pass criterion |
 |---|---|---|---|
-| Positive / functional | 60 (14 written) | Valid MiniC programs covering every construct | Compiles; interpreter output matches `.expected` exactly |
-| Negative | 30 (15 written) | One deliberate defect each: 10 lexical, 10 syntactic, 10 semantic | Correct diagnostic, correct line and column; never crashes, never silently accepts |
+| Positive / functional | 60 (15 written) | Valid MiniC programs covering every construct | Compiles; interpreter output matches `.expected` exactly |
+| Negative | 30 (16 written) | One deliberate defect each: 10 lexical, 10 syntactic, 10 semantic | Correct diagnostic, correct line and column; never crashes, never silently accepts |
 | Boundary | 20 | Empty function body, empty loop body, zero-iteration loop, `INT_MAX` arithmetic, deep nesting, recursion depth 1000, single-statement program | No crash, hang, or wrong result |
 | Optimization micro-tests | 30+ (15 written: 3 each for P1-P3, 1 each for P4-P9) | Programs constructed so exactly one pass can fire | Named pass reports the exact expected transformation count; IR matches golden file |
 | **Differential (semantic equivalence)** | All 60, every commit | Same program compiled with optimization off and on | **Byte-identical output. Any mismatch breaks the build.** |

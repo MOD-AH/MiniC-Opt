@@ -49,3 +49,7 @@ add_test(NAME lexer_gcd
          COMMAND minic --dump-tokens ${CMAKE_CURRENT_SOURCE_DIR}/tests/programs/gcd.c)
 add_test(NAME lexer_matmul
          COMMAND minic --dump-tokens ${CMAKE_CURRENT_SOURCE_DIR}/tests/programs/matmul.c)
+# ast_smoke was built but never registered, so the project's only unit test
+# had never actually executed in CI. Registered here and run by the ctest
+# step in .github/workflows/ci.yml.
+add_test(NAME ast_smoke COMMAND ast_smoke)
