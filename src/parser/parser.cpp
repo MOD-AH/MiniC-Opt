@@ -363,7 +363,20 @@ std::unique_ptr<Stmt> Parser::parseContinueStmt() {
 // > logical_and > equality > relational > additive > multiplicative > unary
 // > postfix > primary (highest).
 
-std::unique_ptr<Expr> Parser::parseExpression() { return parseAssignment(); }
+std::unique_ptr<Expr> Parser::parseExpression() {
+    // Checked before the counter is raised, so the throw needs no unwinding
+    // of its own; the guard below restores the depth on the normal path and
+    // on the ParseError thrown by any nested errorHere().
+    if (exprDepth_ >= kMaxExprDepth)
+        errorHere("expression nests too deeply (limit " +
+                  std::to_string(kMaxExprDepth) + ")");
+    struct DepthGuard {
+        int& d;
+        explicit DepthGuard(int& dd) : d(dd) { ++d; }
+        ~DepthGuard() { --d; }
+    } guard(exprDepth_);
+    return parseAssignment();
+}
 
 // assignment ::= lvalue ("=" | "+=" | "-=" | "*=" | "/=") assignment | logical_or
 // Parsed by first parsing the full lower-precedence expression, then
