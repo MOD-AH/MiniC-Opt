@@ -39,6 +39,17 @@ jobs:
       - name: Run test suite
         run: ./scripts/run_all.sh
 
+      # Pins the IR each pass emits. The differential gate below proves
+      # behaviour is unchanged; this catches a pass that quietly stops
+      # firing or changes shape while still computing the same answer.
+      - name: Golden-IR regression
+        run: ./scripts/golden.sh
+
+      # Timing budgets with wide margins — see the header of perf.sh for
+      # why the 3000-line optimizer case is allowed far more than it needs.
+      - name: Performance and scalability
+        run: ./scripts/perf.sh
+
       # Enabled from Review 2 Step 6, now that the interpreter and the
       # optimizer exist (P1-P3 as of Step 6, all of P1-P9 as of Review 3).
       # This is the gate that makes optimization safe: the unoptimized and

@@ -1,0 +1,11 @@
+
+f(a#0, b#1):
+    t1 = a#0 + b#1
+    y#3 = t1
+    ret y#3
+
+main():
+    param 3
+    param 4
+    t0 = call f, 2
+    ret t0

@@ -225,6 +225,24 @@ for f in tests/programs/*.c; do
   if [ "$good" -eq 1 ]; then ok "$(basename "$f")"; else no "$(basename "$f")"; fi
 done
 
+hdr "Golden-IR regression (see scripts/golden.sh for detail)"
+if ./scripts/golden.sh > /tmp/minic_golden_$$.log 2>&1; then
+  ok "committed IR listings match for all 9 passes plus the full pipeline"
+else
+  no "golden IR mismatch — see below"
+  cat /tmp/minic_golden_$$.log
+fi
+rm -f /tmp/minic_golden_$$.log
+
+hdr "Performance and scalability (see scripts/perf.sh for detail)"
+if ./scripts/perf.sh > /tmp/minic_perf_$$.log 2>&1; then
+  ok "$(grep -c PASS /tmp/minic_perf_$$.log) timing cases within budget"
+else
+  no "performance budget exceeded — see below"
+  cat /tmp/minic_perf_$$.log
+fi
+rm -f /tmp/minic_perf_$$.log
+
 hdr "Differential-execution gate (see scripts/differential.sh for detail)"
 if ./scripts/differential.sh > /tmp/minic_differential_$$.log 2>&1; then
   ok "unoptimized == full P1-P9 pipeline == each pass alone, on every benchmark and micro-test"
@@ -234,8 +252,6 @@ else
 fi
 rm -f /tmp/minic_differential_$$.log
 
-hdr "Not yet implemented (planned)"
-echo "  Review 3 : full 60/30 benchmark and negative-test suite (currently a representative subset per pass)"
 
 hdr "Summary"
 printf "  %d passed, %d failed\n\n" "$pass" "$fail"
