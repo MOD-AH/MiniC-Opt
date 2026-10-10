@@ -8,7 +8,7 @@ category below is the project's primary correctness guarantee.
 
 | Category | Count | What is tested | Pass criterion |
 |---|---|---|---|
-| Positive / functional | 60 (27 written) | Valid MiniC programs covering every construct | Compiles; interpreter output matches `.expected` exactly |
+| Positive / functional | **60 (60 written)** | Valid MiniC programs covering every construct, plus optimizer pass-interaction stress, control-flow complexity, larger multi-function programs, and classic algorithms | Compiles; interpreter output matches `.expected` exactly. Every `.expected` was computed by hand before the compiler was consulted |
 | Negative | **30 (30 written)** | One deliberate defect each: 6 lexical, 6 syntactic, 18 semantic — one per distinct diagnostic the compiler can emit | Correct diagnostic, correct line and column; never crashes, never silently accepts |
 | Boundary | **20 (20 written)** | Empty function/loop body, zero-trip while and for, `INT_MAX`/`INT_MIN` literals, 100-deep statement and block nesting, recursion depth 1000, single-statement program, size-1 and last-index array access, negative division/modulo truncation, expression exactly at the parser's nesting limit | No crash, hang, or wrong result. Lives in `tests/boundary/`; every `.expected` was computed by hand before the compiler was consulted |
 | Optimization micro-tests | 30+ (15 written: 3 each for P1-P3, 1 each for P4-P9) | Programs constructed so exactly one pass can fire | Named pass reports the exact expected transformation count; IR matches golden file |
