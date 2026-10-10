@@ -44,6 +44,27 @@ else
   echo "  build/minic ready (cmake not found — compiled directly)"
 fi
 
+hdr "Unit tests (tests/unit) — framework-level assertions over each stage"
+# Built directly rather than through the cmake target so this section works
+# on the no-cmake path too. One ok/no for the suite as a whole; the runner
+# prints per-case detail itself when something fails.
+UNIT_BIN="build/unit_tests"
+if ${CXX:-c++} -std=c++17 -O1 -Iinclude -Itests/unit \
+      tests/unit/unit_main.cpp tests/unit/test_lexer.cpp \
+      tests/unit/test_symbol_cfg.cpp tests/unit/test_dataflow_ir.cpp \
+      $(find src -name '*.cpp' ! -name 'main.cpp' | sort) \
+      -o "$UNIT_BIN" > /dev/null 2>&1; then
+  unit_out="$("$UNIT_BIN" 2>&1)"
+  if [ $? -eq 0 ]; then
+    ok "unit suite  →  $(echo "$unit_out" | tail -1 | sed 's/^ *//')"
+  else
+    no "unit suite"
+    echo "$unit_out" | sed 's/^/    /'
+  fi
+else
+  no "unit suite (failed to build)"
+fi
+
 hdr "Positive suite — lexer must report zero errors"
 for f in tests/programs/*.c; do
   if "$BIN" --dump-tokens "$f" > /dev/null 2>&1; then ok "$(basename "$f")"; else no "$(basename "$f")"; fi
