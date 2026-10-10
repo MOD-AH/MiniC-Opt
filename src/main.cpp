@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <set>
 
 using namespace minic;
 
@@ -168,17 +169,26 @@ struct OptConfig {
 // Runs the Step 6 pipeline over every function's CFG and flattens each
 // back to a linear IRFunction — see ir_utils.h's flatten() for why that
 // round trip is lossless for P1-P3. globalInit is carried through
-// unchanged: it has no control flow for a CFG-based pass to act on, and
-// no committed benchmark declares a global to begin with.
+// unchanged: it has no control flow for a CFG-based pass to act on.
+//
+// The names written by globalInit are exactly the program's globals (every
+// global is initialized there, explicitly or to zero), and they are handed
+// to the pass manager because P5 cannot otherwise tell a global apart from
+// a dead local — see makeDeadCodeEliminationPass in opt_passes.h.
 static IRProgram applyOptimization(const IRProgram& ir, const OptConfig& opt,
                                     std::vector<PassManager::PassReport>* reportOut) {
     IRProgram out;
     out.globalInit = ir.globalInit;
+
+    std::set<std::string> globals;
+    for (const Quad& q : ir.globalInit)
+        if (q.result.kind == OperandKind::VARIABLE) globals.insert(q.result.name);
+
     for (const IRFunction& fn : ir.functions) {
         CFG cfg(fn);
         if (!opt.noOpt) {
             PassManager pm;
-            registerAllPasses(pm);
+            registerAllPasses(pm, globals);
             if (!opt.only.empty()) pm.enableOnly(opt.only);
             pm.run(cfg);
             if (reportOut) {
