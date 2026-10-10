@@ -35,6 +35,16 @@ private:
     std::string         file_;
     DiagnosticSink       sink_;
 
+    // Expression-nesting guard. One level of parenthesisation descends the
+    // whole precedence chain (parseExpression -> ... -> parsePrimary, ~10
+    // frames), so expressions exhaust the stack far sooner than statements
+    // do: ~5000 nested parens used to crash with SIGSEGV, while 10000
+    // nested blocks parse fine. The limit is deliberately well below the
+    // observed crash point so it holds on platforms with a smaller stack
+    // than this one, and far above anything real source reaches.
+    static constexpr int kMaxExprDepth = 256;
+    int exprDepth_ = 0;
+
     // Thrown by expect()/errorHere() after the diagnostic is recorded;
     // caught at a statement/declaration boundary to drive panic-mode
     // recovery. Never escapes parseProgram().
