@@ -3,6 +3,8 @@
 #pragma once
 #include "pass.h"
 #include <memory>
+#include <set>
+#include <string>
 
 namespace minic {
 
@@ -27,7 +29,13 @@ std::unique_ptr<Pass> makeCommonSubexprEliminationPass();
 
 // P5. Precondition: live variables — deletes a pure computation whose
 // result is never live afterward.
-std::unique_ptr<Pass> makeDeadCodeEliminationPass();
+// `globals` names every variable with program lifetime (derived from
+// IRProgram::globalInit, which writes each one exactly once). A store to a
+// global can never be proved dead by this pass: liveness here is
+// intra-procedural, so it cannot see the read that another function
+// performs afterwards. Passing the set empty therefore risks deleting a
+// function whose only effect is writing a global.
+std::unique_ptr<Pass> makeDeadCodeEliminationPass(std::set<std::string> globals = {});
 
 // P6. Precondition: CFG reachability — folds a branch whose condition has
 // become a compile-time constant, then deletes any block no longer
@@ -53,6 +61,8 @@ std::unique_ptr<Pass> makePeepholePass();
 // added in does not fix the order they run in relative to each other's
 // effects (PassManager::run sweeps all of them repeatedly to a fixed
 // point), but it is the order --help and the metrics table list them in.
-void registerAllPasses(PassManager& pm);
+// `globals` is forwarded to P5; see makeDeadCodeEliminationPass above for
+// why omitting it is unsafe for any program that declares a global.
+void registerAllPasses(PassManager& pm, std::set<std::string> globals = {});
 
 } // namespace minic

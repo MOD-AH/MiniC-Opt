@@ -56,6 +56,9 @@ bool isDceEligible(Op op) {
 
 class DeadCodeElimination : public Pass {
 public:
+    explicit DeadCodeElimination(std::set<std::string> globals)
+        : globals_(std::move(globals)) {}
+
     std::string name() const override { return "dce"; }
     std::string description() const override {
         return "dead-code elimination: delete a pure computation whose result is never live afterward";
@@ -75,7 +78,15 @@ public:
             for (size_t qi = b.code.size(); qi-- > 0; ) {
                 Quad& q = b.code[qi];
                 Operand w;
-                if (writesOf(q, w) && isDceEligible(q.op) && !liveNow.count(w.name)) {
+                // A global is treated as live at every point. computeLiveVariables
+                // is intra-procedural and sets OUT[exit] = {}, so a store to a
+                // global that this function never reads back looks dead here even
+                // though another function reads it later — which is how the whole
+                // body of a `void bump() { counter = counter + 1; }` came to be
+                // deleted. Nothing intra-procedural can prove such a store dead,
+                // so the pass simply never claims one.
+                if (writesOf(q, w) && isDceEligible(q.op) && !liveNow.count(w.name)
+                        && !globals_.count(w.name)) {
                     keep[qi] = false;
                     ++count_;
                     continue;   // deleted: its reads never execute, don't add them to liveNow
@@ -95,10 +106,13 @@ public:
 
 private:
     int count_ = 0;
+    std::set<std::string> globals_;
 };
 
 } // namespace
 
-std::unique_ptr<Pass> makeDeadCodeEliminationPass() { return std::make_unique<DeadCodeElimination>(); }
+std::unique_ptr<Pass> makeDeadCodeEliminationPass(std::set<std::string> globals) {
+    return std::make_unique<DeadCodeElimination>(std::move(globals));
+}
 
 } // namespace minic

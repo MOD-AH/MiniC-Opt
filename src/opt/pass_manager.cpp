@@ -56,12 +56,12 @@ void PassManager::disableAll() {
     passes_.clear();
 }
 
-void registerAllPasses(PassManager& pm) {
+void registerAllPasses(PassManager& pm, std::set<std::string> globals) {
     pm.add(makeConstantFoldingPass());
     pm.add(makeConstantPropagationPass());
     pm.add(makeCopyPropagationPass());
     pm.add(makeCommonSubexprEliminationPass());
-    pm.add(makeDeadCodeEliminationPass());
+    pm.add(makeDeadCodeEliminationPass(std::move(globals)));
     pm.add(makeUnreachableCodeEliminationPass());
     pm.add(makeStrengthReductionPass());
     pm.add(makeLoopInvariantCodeMotionPass());
