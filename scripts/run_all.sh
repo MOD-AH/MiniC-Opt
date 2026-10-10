@@ -33,8 +33,15 @@ for f in tests/programs/*.c; do
   if "$BIN" --dump-tokens "$f" > /dev/null 2>&1; then ok "$(basename "$f")"; else no "$(basename "$f")"; fi
 done
 
-hdr "Negative suite — lexer must report at least one diagnostic"
-for f in tests/negative/*.c; do
+# The negative suite is organised by the stage that is SUPPOSED to catch each
+# file: lex*.c are lexically malformed, syn*.c parse-malformed, sem*.c
+# type-malformed. Each sweep below therefore only covers the files whose defect
+# is visible by that stage — a sem*.c file is lexically and syntactically valid
+# by construction, so demanding a lexer diagnostic for it would be a bug in the
+# harness, not in the compiler. The --check sweep further down is the one that
+# must catch every file, whatever its stage.
+hdr "Negative suite — lexer must report at least one diagnostic (lex*.c)"
+for f in tests/negative/lex*.c; do
   if "$BIN" --dump-tokens "$f" > /dev/null 2>&1; then
     no "$(basename "$f")  (expected an error, got none)"
   else
@@ -47,8 +54,8 @@ for f in tests/programs/*.c; do
   if timeout 5 "$BIN" --dump-ast "$f" > /dev/null 2>&1; then ok "$(basename "$f")"; else no "$(basename "$f")"; fi
 done
 
-hdr "Negative suite — parser must report at least one diagnostic (--dump-ast), and never hang"
-for f in tests/negative/*.c; do
+hdr "Negative suite — parser must report at least one diagnostic (lex*.c, syn*.c; --dump-ast), and never hang"
+for f in tests/negative/lex*.c tests/negative/syn*.c; do
   timeout 5 "$BIN" --dump-ast "$f" > /dev/null 2>&1
   rc=$?
   if [ "$rc" -eq 124 ]; then
