@@ -137,6 +137,31 @@ for f in tests/programs/*.c; do
   rm -f "$got"
 done
 
+hdr "Boundary suite — degenerate but legal programs must not crash, hang or mis-evaluate"
+# Every .expected here was computed by hand before the compiler was asked,
+# so a disagreement means the compiler is wrong rather than the file being
+# stale. Covers empty bodies, zero-trip loops, INT_MAX/INT_MIN literals,
+# deep statement nesting, recursion depth 1000, truncation of negative
+# division and modulo, and an expression exactly at the parser's depth limit.
+for f in tests/boundary/*.c; do
+  base="${f%.c}"
+  exp="$base.expected"
+  name="$(basename "$f")"
+  got="$(mktemp)"
+  timeout 5 "$BIN" --run "$f" > "$got" 2>/dev/null
+  rc=$?
+  if [ "$rc" -eq 124 ]; then
+    no "$name  (timed out — hung)"
+  elif [ "$rc" -ne 0 ]; then
+    no "$name  (interpreter exited $rc)"
+  elif cmp -s "$got" "$exp"; then
+    ok "$name"
+  else
+    no "$name  (output != $(basename "$exp"))"
+  fi
+  rm -f "$got"
+done
+
 hdr "Positive suite — CFG construction must succeed (--dump-cfg), and never hang"
 for f in tests/programs/*.c; do
   if timeout 5 "$BIN" --dump-cfg "$f" > /dev/null 2>&1; then ok "$(basename "$f")"; else no "$(basename "$f")"; fi
