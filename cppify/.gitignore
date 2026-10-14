@@ -1,0 +1,9 @@
+# Build products — regenerate with ./build-app.sh
+Cppify.app/
+Cppify/.build/
+Cppify/.swiftpm/
+MiniCCore/build/
+Cppify/Resources/minic-trace
+# Intermediate images — regenerate with branding/make-assets.swift
+branding/out/
+.DS_Store
