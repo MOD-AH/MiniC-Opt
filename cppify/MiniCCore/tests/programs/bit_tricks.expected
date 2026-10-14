@@ -1,0 +1,4 @@
+flags = 60
+popcount(255) = 8
+popcount(1000) = 6
+4

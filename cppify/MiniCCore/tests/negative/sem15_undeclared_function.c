@@ -1,0 +1,3 @@
+int main() {
+    return nosuch(1);
+}

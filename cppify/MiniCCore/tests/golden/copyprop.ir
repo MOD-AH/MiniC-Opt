@@ -1,0 +1,11 @@
+
+identity(a#0):
+    b#1 = 0
+    b#1 = a#0
+    t0 = a#0 + 1
+    ret t0
+
+main():
+    param 5
+    t0 = call identity, 1
+    ret t0

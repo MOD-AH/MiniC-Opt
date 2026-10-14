@@ -1,0 +1,7 @@
+
+main():
+    s#0 = 0
+    s#0 = 1
+    goto L0
+  L0:
+    ret s#0
