@@ -1,0 +1,7 @@
+/* Condition false on entry: the body must never execute. */
+int main() {
+    int i;
+    i = 0;
+    while (i < 0) { i = i + 1; }
+    return i;
+}
