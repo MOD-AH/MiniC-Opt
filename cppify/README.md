@@ -35,9 +35,10 @@ cppify/
 ## The original compiler is untouched
 
 The compiler at the root of this repository (`../src`, `../include`) is the
-graded, CI-green MiniC-Opt, and nothing in `cppify/` edits it; CI builds and
-tests only that root compiler. Cppify works from a fork (`MiniCCore/`), which
-has since grown well beyond the original MiniC subset. To test the fork:
+graded, CI-green MiniC-Opt, and nothing in `cppify/` edits it. Cppify works
+from a fork (`MiniCCore/`), which has since grown well beyond the original
+MiniC subset; a second CI job (`cppify-core`) is meant to test it but has not
+yet run on GitHub. To test the fork:
 
 ```bash
 cd cppify/MiniCCore
@@ -52,13 +53,13 @@ bash scripts/run_all.sh && bash scripts/differential.sh && bash scripts/golden.s
 | Statements | if/else, while, do-while, for (with declarations), switch/case/default, break, continue, goto/labels, return |
 | Operators | arithmetic, comparison, logical, bitwise, shifts, `?:`, comma, `sizeof`, casts, `&` `*` `.` `->`, all compound assignments |
 | Library | printf/scanf/sscanf/sprintf (width, precision, flags), getchar/putchar/puts/fgets, `<string.h>`, `<math.h>`, `<ctype.h>`, malloc/calloc/realloc/free, atoi, rand, exit |
-| Preprocessor | `#include` skipped (library always in scope); object-like `#define` expanded |
+| Preprocessor | `#include` skipped (library always in scope); object-like `#define`, `#undef`, `#ifdef`/`#ifndef`/`#if`/`#elif`/`#else`/`#endif` |
 
-Still outside it: `union`, function pointers, file I/O, `#if`/`#ifdef`, function-like
+Still outside it: `union`, function pointers, file I/O, function-like
 macros and user-defined variadic functions. The app's advisor names each of these
 when a pasted program uses one.
 
-How the new features map onto the existing IR, with no change to the nine passes:
+How the new features map onto the existing IR:
 a pointer is (array, offset) in the interpreter, so `*p` and `p[i]` are ordinary
 `LOAD_INDEX`/`STORE_INDEX`. A scalar whose address is taken lives in a one-slot
 array. A struct is a flat run of slots with fixed field offsets. The only new
@@ -66,13 +67,47 @@ opcode is `COPY_BLOCK`, for struct assignment.
 
 | Check (vendored copy, current) | Result |
 |---|---|
-| Full suite (incl. 264 unit tests) | 724 / 0 |
-| Differential-execution gate | 1070 / 0 |
+| Full suite (incl. 285 unit tests and a 40-seed fuzz run) | 798 / 0 |
+| Differential-execution gate (every pass and preset alone, IR verifier on) | 2040 / 0 |
+| Clang oracle (`scripts/clang_oracle.py`), unoptimized + classic + optimized | 120 match / 0 mismatch / 0 excluded |
+| Fuzzing against clang (`scripts/fuzz.py`), last large run | 740 programs × 7 configurations, 0 mismatches |
 | Golden-IR regression | 0 mismatched |
 
-The library-heavy tests and the new samples were checked against the output of
-the same source compiled natively with clang, so they don't rely on this
-compiler's own idea of what C means.
+The differential gate compares Cppify with itself; the clang oracle compares it
+with a real C compiler, building every positive test with clang and requiring
+identical output and exit status. What the subset covers, and where it knowingly
+differs from clang, is in [`MiniCCore/docs/supported-c-subset.md`](MiniCCore/docs/supported-c-subset.md).
+What comes next is in [`ROADMAP.md`](ROADMAP.md).
+
+## The optimizer
+
+`minic --preset=<name>` picks a pipeline (`--print-pipeline` shows the order):
+
+- **correctness:** no passes.
+- **balanced:** P1–P3, P5, P6 and P9.
+- **classic:** the original P1–P9 to a fixed point.
+- **optimized:** an SSA group (SCCP, GVN, LICM with alias analysis, mark-sweep DCE) followed by P1–P9 without P7.
+
+`--config=file.json` takes any ordered grouping of passes, and `--verify-each` checks the IR after every pass.
+
+On the 75 test programs, optimized executes 7.7% fewer instructions than classic. It wins on 54 programs, loses on none, and every output is identical. See [`MiniCCore/docs/benchmarks.md`](MiniCCore/docs/benchmarks.md).
+
+The new IR verifier and fuzzing against clang (`scripts/fuzz.py`) found five miscompiles in P2, P3, P7 and P8. They are fixed in the fork, but **they are still present in the root compiler**, which this work does not modify. Each one is listed in the ROADMAP progress log with its regression test.
+
+## Execution engines and front ends
+
+The same program can run on three engines:
+
+- **`--run`:** the quad interpreter.
+- **`--run-vm`:** a register bytecode VM compiled from the IR, 3.4–5.0× faster than the quad interpreter on `bench/programs`.
+- **`--run-ast`:** a reference interpreter that walks the typed AST with no IR at all. It catches IRGen bugs that unoptimized-vs-optimized comparison cannot: both of those runs start from the same IR.
+
+The front end also has two implementations of each stage:
+
+- **Lexer:** an re2c-generated DFA, now the default, and the hand-written scanner.
+- **Parser:** the hand-written recursive-descent parser, still the default, and a Bison IELR(1) parser.
+
+Both pairs are checked token for token and AST for AST on every run. See [`MiniCCore/docs/front-ends.md`](MiniCCore/docs/front-ends.md).
 
 ## Branding
 
