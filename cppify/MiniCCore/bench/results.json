@@ -1,0 +1,1712 @@
+{
+ "config": {
+  "commit": "3514fd7-dirty",
+  "binary": "MiniC-Opt 0.1.0 (full pipeline: lexer, parser, sema, IR, CFG, P1-P9, backend)",
+  "runs": 5,
+  "statistic": "median",
+  "presets": {
+   "classic": {
+    "preset": "classic",
+    "groups": [
+     {
+      "passes": [
+       "fold",
+       "constprop",
+       "copyprop",
+       "cse",
+       "dce",
+       "unreachable",
+       "strength",
+       "licm",
+       "peephole"
+      ],
+      "fixpoint": true,
+      "sweeps": 32,
+      "ssa": false,
+      "order": "[fold, constprop, copyprop, cse, dce, unreachable, strength, licm, peephole] to a fixed point (at most 32 sweeps)"
+     }
+    ]
+   },
+   "optimized": {
+    "preset": "optimized",
+    "groups": [
+     {
+      "passes": [
+       "sccp",
+       "gvn",
+       "licm-ssa",
+       "ssa-dce"
+      ],
+      "fixpoint": true,
+      "sweeps": 32,
+      "ssa": true,
+      "order": "ssa -> [sccp, gvn, licm-ssa, ssa-dce] to a fixed point (at most 32 sweeps) -> out-of-ssa"
+     },
+     {
+      "passes": [
+       "fold",
+       "constprop",
+       "copyprop",
+       "cse",
+       "dce",
+       "unreachable",
+       "licm",
+       "peephole"
+      ],
+      "fixpoint": true,
+      "sweeps": 32,
+      "ssa": false,
+      "order": "[fold, constprop, copyprop, cse, dce, unreachable, licm, peephole] to a fixed point (at most 32 sweeps)"
+     }
+    ]
+   }
+  },
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "date": "2026-10-28T22:09:40"
+ },
+ "programs": {
+  "array_infer.c": {
+   "classic": {
+    "staticBefore": 64,
+    "staticAfter": 63,
+    "dynamicBefore": 99,
+    "dynamicAfter": 94,
+    "compileMsMedian": 0.573541,
+    "runMsMedian": 0.006916,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 64,
+    "staticAfter": 61,
+    "dynamicBefore": 99,
+    "dynamicAfter": 84,
+    "compileMsMedian": 0.7505000000000001,
+    "runMsMedian": 0.006458,
+    "outputsMatch": true
+   }
+  },
+  "array_init.c": {
+   "classic": {
+    "staticBefore": 39,
+    "staticAfter": 37,
+    "dynamicBefore": 93,
+    "dynamicAfter": 91,
+    "compileMsMedian": 0.520584,
+    "runMsMedian": 0.006333,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 39,
+    "staticAfter": 33,
+    "dynamicBefore": 93,
+    "dynamicAfter": 73,
+    "compileMsMedian": 0.701875,
+    "runMsMedian": 0.006083,
+    "outputsMatch": true
+   }
+  },
+  "big_matrix_ops.c": {
+   "classic": {
+    "staticBefore": 86,
+    "staticAfter": 89,
+    "dynamicBefore": 301,
+    "dynamicAfter": 292,
+    "compileMsMedian": 3.015667,
+    "runMsMedian": 0.014125,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 86,
+    "staticAfter": 75,
+    "dynamicBefore": 301,
+    "dynamicAfter": 238,
+    "compileMsMedian": 1.565588,
+    "runMsMedian": 0.011625,
+    "outputsMatch": true
+   }
+  },
+  "big_sieve_100.c": {
+   "classic": {
+    "staticBefore": 155,
+    "staticAfter": 152,
+    "dynamicBefore": 2218,
+    "dynamicAfter": 2215,
+    "compileMsMedian": 1.290462,
+    "runMsMedian": 0.063458,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 155,
+    "staticAfter": 145,
+    "dynamicBefore": 2218,
+    "dynamicAfter": 1797,
+    "compileMsMedian": 1.572918,
+    "runMsMedian": 0.054167,
+    "outputsMatch": true
+   }
+  },
+  "big_sort_compare.c": {
+   "classic": {
+    "staticBefore": 123,
+    "staticAfter": 111,
+    "dynamicBefore": 455,
+    "dynamicAfter": 401,
+    "compileMsMedian": 2.169667,
+    "runMsMedian": 0.020625,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 123,
+    "staticAfter": 105,
+    "dynamicBefore": 455,
+    "dynamicAfter": 363,
+    "compileMsMedian": 2.4085039999999998,
+    "runMsMedian": 0.019708,
+    "outputsMatch": true
+   }
+  },
+  "big_stats.c": {
+   "classic": {
+    "staticBefore": 56,
+    "staticAfter": 52,
+    "dynamicBefore": 159,
+    "dynamicAfter": 155,
+    "compileMsMedian": 0.7375,
+    "runMsMedian": 0.008,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 56,
+    "staticAfter": 46,
+    "dynamicBefore": 159,
+    "dynamicAfter": 131,
+    "compileMsMedian": 0.986042,
+    "runMsMedian": 0.007542,
+    "outputsMatch": true
+   }
+  },
+  "binary_search.c": {
+   "classic": {
+    "staticBefore": 49,
+    "staticAfter": 48,
+    "dynamicBefore": 49,
+    "dynamicAfter": 48,
+    "compileMsMedian": 0.7502500000000001,
+    "runMsMedian": 0.005209,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 49,
+    "staticAfter": 44,
+    "dynamicBefore": 49,
+    "dynamicAfter": 44,
+    "compileMsMedian": 1.002542,
+    "runMsMedian": 0.00425,
+    "outputsMatch": true
+   }
+  },
+  "bit_tricks.c": {
+   "classic": {
+    "staticBefore": 45,
+    "staticAfter": 26,
+    "dynamicBefore": 185,
+    "dynamicAfter": 166,
+    "compileMsMedian": 0.8724580000000001,
+    "runMsMedian": 0.00825,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 45,
+    "staticAfter": 24,
+    "dynamicBefore": 185,
+    "dynamicAfter": 130,
+    "compileMsMedian": 0.5575,
+    "runMsMedian": 0.006833,
+    "outputsMatch": true
+   }
+  },
+  "bitwise_ops.c": {
+   "classic": {
+    "staticBefore": 62,
+    "staticAfter": 40,
+    "dynamicBefore": 61,
+    "dynamicAfter": 39,
+    "compileMsMedian": 0.67175,
+    "runMsMedian": 0.003417,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 62,
+    "staticAfter": 40,
+    "dynamicBefore": 61,
+    "dynamicAfter": 39,
+    "compileMsMedian": 0.422125,
+    "runMsMedian": 0.0035,
+    "outputsMatch": true
+   }
+  },
+  "bubble_sort.c": {
+   "classic": {
+    "staticBefore": 55,
+    "staticAfter": 51,
+    "dynamicBefore": 488,
+    "dynamicAfter": 432,
+    "compileMsMedian": 1.103291,
+    "runMsMedian": 0.017416,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 55,
+    "staticAfter": 48,
+    "dynamicBefore": 488,
+    "dynamicAfter": 384,
+    "compileMsMedian": 0.901625,
+    "runMsMedian": 0.01525,
+    "outputsMatch": true
+   }
+  },
+  "cf_break_continue_mix.c": {
+   "classic": {
+    "staticBefore": 33,
+    "staticAfter": 30,
+    "dynamicBefore": 140,
+    "dynamicAfter": 137,
+    "compileMsMedian": 0.585292,
+    "runMsMedian": 0.007375,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 33,
+    "staticAfter": 27,
+    "dynamicBefore": 140,
+    "dynamicAfter": 116,
+    "compileMsMedian": 0.6920000000000001,
+    "runMsMedian": 0.00675,
+    "outputsMatch": true
+   }
+  },
+  "cf_deep_loop_nest.c": {
+   "classic": {
+    "staticBefore": 45,
+    "staticAfter": 40,
+    "dynamicBefore": 338,
+    "dynamicAfter": 333,
+    "compileMsMedian": 1.0326250000000001,
+    "runMsMedian": 0.013333,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 45,
+    "staticAfter": 35,
+    "dynamicBefore": 338,
+    "dynamicAfter": 265,
+    "compileMsMedian": 1.049959,
+    "runMsMedian": 0.010625,
+    "outputsMatch": true
+   }
+  },
+  "cf_many_branches.c": {
+   "classic": {
+    "staticBefore": 60,
+    "staticAfter": 44,
+    "dynamicBefore": 157,
+    "dynamicAfter": 155,
+    "compileMsMedian": 0.595917,
+    "runMsMedian": 0.011958,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 60,
+    "staticAfter": 42,
+    "dynamicBefore": 157,
+    "dynamicAfter": 139,
+    "compileMsMedian": 0.76725,
+    "runMsMedian": 0.010333,
+    "outputsMatch": true
+   }
+  },
+  "cf_multi_return.c": {
+   "classic": {
+    "staticBefore": 22,
+    "staticAfter": 20,
+    "dynamicBefore": 26,
+    "dynamicAfter": 24,
+    "compileMsMedian": 0.31016699999999997,
+    "runMsMedian": 0.003083,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 22,
+    "staticAfter": 20,
+    "dynamicBefore": 26,
+    "dynamicAfter": 24,
+    "compileMsMedian": 0.432417,
+    "runMsMedian": 0.004041,
+    "outputsMatch": true
+   }
+  },
+  "cf_switch_like.c": {
+   "classic": {
+    "staticBefore": 48,
+    "staticAfter": 36,
+    "dynamicBefore": 87,
+    "dynamicAfter": 85,
+    "compileMsMedian": 0.510291,
+    "runMsMedian": 0.007541,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 48,
+    "staticAfter": 34,
+    "dynamicBefore": 87,
+    "dynamicAfter": 75,
+    "compileMsMedian": 0.631166,
+    "runMsMedian": 0.006542,
+    "outputsMatch": true
+   }
+  },
+  "char_arith.c": {
+   "classic": {
+    "staticBefore": 8,
+    "staticAfter": 1,
+    "dynamicBefore": 8,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.21145799999999998,
+    "runMsMedian": 0.000375,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 8,
+    "staticAfter": 1,
+    "dynamicBefore": 8,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.171875,
+    "runMsMedian": 0.000417,
+    "outputsMatch": true
+   }
+  },
+  "collatz.c": {
+   "classic": {
+    "staticBefore": 23,
+    "staticAfter": 21,
+    "dynamicBefore": 1228,
+    "dynamicAfter": 1226,
+    "compileMsMedian": 0.346208,
+    "runMsMedian": 0.034625,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 23,
+    "staticAfter": 18,
+    "dynamicBefore": 1228,
+    "dynamicAfter": 1004,
+    "compileMsMedian": 0.471541,
+    "runMsMedian": 0.02975,
+    "outputsMatch": true
+   }
+  },
+  "compound_assign.c": {
+   "classic": {
+    "staticBefore": 11,
+    "staticAfter": 1,
+    "dynamicBefore": 11,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.228792,
+    "runMsMedian": 0.000334,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 11,
+    "staticAfter": 1,
+    "dynamicBefore": 11,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.14575,
+    "runMsMedian": 0.000334,
+    "outputsMatch": true
+   }
+  },
+  "continue_stmt.c": {
+   "classic": {
+    "staticBefore": 19,
+    "staticAfter": 17,
+    "dynamicBefore": 97,
+    "dynamicAfter": 95,
+    "compileMsMedian": 0.289334,
+    "runMsMedian": 0.004125,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 19,
+    "staticAfter": 15,
+    "dynamicBefore": 97,
+    "dynamicAfter": 80,
+    "compileMsMedian": 0.424,
+    "runMsMedian": 0.004792,
+    "outputsMatch": true
+   }
+  },
+  "count_primes.c": {
+   "classic": {
+    "staticBefore": 38,
+    "staticAfter": 35,
+    "dynamicBefore": 1497,
+    "dynamicAfter": 1445,
+    "compileMsMedian": 0.49387499999999995,
+    "runMsMedian": 0.068709,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 38,
+    "staticAfter": 32,
+    "dynamicBefore": 1497,
+    "dynamicAfter": 1284,
+    "compileMsMedian": 0.6814169999999999,
+    "runMsMedian": 0.063834,
+    "outputsMatch": true
+   }
+  },
+  "count_vowels.c": {
+   "classic": {
+    "staticBefore": 71,
+    "staticAfter": 64,
+    "dynamicBefore": 307,
+    "dynamicAfter": 261,
+    "compileMsMedian": 1.179545,
+    "runMsMedian": 0.011459,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 71,
+    "staticAfter": 62,
+    "dynamicBefore": 307,
+    "dynamicAfter": 248,
+    "compileMsMedian": 1.1247939999999998,
+    "runMsMedian": 0.011291,
+    "outputsMatch": true
+   }
+  },
+  "digit_sum.c": {
+   "classic": {
+    "staticBefore": 16,
+    "staticAfter": 15,
+    "dynamicBefore": 56,
+    "dynamicAfter": 55,
+    "compileMsMedian": 0.273584,
+    "runMsMedian": 0.003625,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 16,
+    "staticAfter": 13,
+    "dynamicBefore": 56,
+    "dynamicAfter": 43,
+    "compileMsMedian": 0.402709,
+    "runMsMedian": 0.002917,
+    "outputsMatch": true
+   }
+  },
+  "do_while.c": {
+   "classic": {
+    "staticBefore": 24,
+    "staticAfter": 18,
+    "dynamicBefore": 34,
+    "dynamicAfter": 29,
+    "compileMsMedian": 0.6428750000000001,
+    "runMsMedian": 0.002542,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 24,
+    "staticAfter": 17,
+    "dynamicBefore": 34,
+    "dynamicAfter": 24,
+    "compileMsMedian": 0.440458,
+    "runMsMedian": 0.0025,
+    "outputsMatch": true
+   }
+  },
+  "else_if_chain.c": {
+   "classic": {
+    "staticBefore": 35,
+    "staticAfter": 28,
+    "dynamicBefore": 38,
+    "dynamicAfter": 37,
+    "compileMsMedian": 0.357875,
+    "runMsMedian": 0.004083,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 35,
+    "staticAfter": 28,
+    "dynamicBefore": 38,
+    "dynamicAfter": 37,
+    "compileMsMedian": 0.479209,
+    "runMsMedian": 0.004,
+    "outputsMatch": true
+   }
+  },
+  "factorial.c": {
+   "classic": {
+    "staticBefore": 15,
+    "staticAfter": 15,
+    "dynamicBefore": 78,
+    "dynamicAfter": 78,
+    "compileMsMedian": 0.228833,
+    "runMsMedian": 0.004708,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 15,
+    "staticAfter": 13,
+    "dynamicBefore": 78,
+    "dynamicAfter": 58,
+    "compileMsMedian": 0.443625,
+    "runMsMedian": 0.003458,
+    "outputsMatch": true
+   }
+  },
+  "fib_iter.c": {
+   "classic": {
+    "staticBefore": 18,
+    "staticAfter": 17,
+    "dynamicBefore": 189,
+    "dynamicAfter": 169,
+    "compileMsMedian": 0.352209,
+    "runMsMedian": 0.007375,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 18,
+    "staticAfter": 16,
+    "dynamicBefore": 189,
+    "dynamicAfter": 149,
+    "compileMsMedian": 0.48866699999999996,
+    "runMsMedian": 0.00825,
+    "outputsMatch": true
+   }
+  },
+  "fib_memo.c": {
+   "classic": {
+    "staticBefore": 51,
+    "staticAfter": 50,
+    "dynamicBefore": 347,
+    "dynamicAfter": 346,
+    "compileMsMedian": 0.40675,
+    "runMsMedian": 0.015458,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 51,
+    "staticAfter": 49,
+    "dynamicBefore": 347,
+    "dynamicAfter": 318,
+    "compileMsMedian": 0.612208,
+    "runMsMedian": 0.014541,
+    "outputsMatch": true
+   }
+  },
+  "fib_rec.c": {
+   "classic": {
+    "staticBefore": 15,
+    "staticAfter": 15,
+    "dynamicBefore": 12824,
+    "dynamicAfter": 12824,
+    "compileMsMedian": 0.187,
+    "runMsMedian": 0.828166,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 15,
+    "staticAfter": 15,
+    "dynamicBefore": 12824,
+    "dynamicAfter": 12824,
+    "compileMsMedian": 0.293125,
+    "runMsMedian": 0.82725,
+    "outputsMatch": true
+   }
+  },
+  "float_arith.c": {
+   "classic": {
+    "staticBefore": 15,
+    "staticAfter": 1,
+    "dynamicBefore": 15,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.282792,
+    "runMsMedian": 0.000375,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 15,
+    "staticAfter": 1,
+    "dynamicBefore": 15,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.173166,
+    "runMsMedian": 0.000375,
+    "outputsMatch": true
+   }
+  },
+  "for_decl_empty_cond.c": {
+   "classic": {
+    "staticBefore": 35,
+    "staticAfter": 32,
+    "dynamicBefore": 86,
+    "dynamicAfter": 75,
+    "compileMsMedian": 0.503375,
+    "runMsMedian": 0.005042,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 35,
+    "staticAfter": 27,
+    "dynamicBefore": 86,
+    "dynamicAfter": 56,
+    "compileMsMedian": 0.675416,
+    "runMsMedian": 0.005584,
+    "outputsMatch": true
+   }
+  },
+  "gcd.c": {
+   "classic": {
+    "staticBefore": 14,
+    "staticAfter": 14,
+    "dynamicBefore": 28,
+    "dynamicAfter": 28,
+    "compileMsMedian": 0.192084,
+    "runMsMedian": 0.00225,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 14,
+    "staticAfter": 13,
+    "dynamicBefore": 28,
+    "dynamicAfter": 25,
+    "compileMsMedian": 0.34729200000000005,
+    "runMsMedian": 0.00225,
+    "outputsMatch": true
+   }
+  },
+  "gcd_recursive.c": {
+   "classic": {
+    "staticBefore": 13,
+    "staticAfter": 13,
+    "dynamicBefore": 28,
+    "dynamicAfter": 28,
+    "compileMsMedian": 0.160334,
+    "runMsMedian": 0.003375,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 13,
+    "staticAfter": 13,
+    "dynamicBefore": 28,
+    "dynamicAfter": 28,
+    "compileMsMedian": 0.250666,
+    "runMsMedian": 0.004167,
+    "outputsMatch": true
+   }
+  },
+  "globals.c": {
+   "classic": {
+    "staticBefore": 4,
+    "staticAfter": 4,
+    "dynamicBefore": 6,
+    "dynamicAfter": 6,
+    "compileMsMedian": 0.120083,
+    "runMsMedian": 0.000916,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 4,
+    "staticAfter": 4,
+    "dynamicBefore": 6,
+    "dynamicAfter": 6,
+    "compileMsMedian": 0.168167,
+    "runMsMedian": 0.000917,
+    "outputsMatch": true
+   }
+  },
+  "goto_shapes.c": {
+   "classic": {
+    "staticBefore": 89,
+    "staticAfter": 66,
+    "dynamicBefore": 193,
+    "dynamicAfter": 181,
+    "compileMsMedian": 6.917745,
+    "runMsMedian": 0.010041,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 89,
+    "staticAfter": 60,
+    "dynamicBefore": 193,
+    "dynamicAfter": 155,
+    "compileMsMedian": 2.175502,
+    "runMsMedian": 0.00925,
+    "outputsMatch": true
+   }
+  },
+  "incr_decr.c": {
+   "classic": {
+    "staticBefore": 20,
+    "staticAfter": 1,
+    "dynamicBefore": 20,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.407834,
+    "runMsMedian": 0.000417,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 20,
+    "staticAfter": 1,
+    "dynamicBefore": 20,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.188917,
+    "runMsMedian": 0.000416,
+    "outputsMatch": true
+   }
+  },
+  "insertion_sort.c": {
+   "classic": {
+    "staticBefore": 44,
+    "staticAfter": 43,
+    "dynamicBefore": 203,
+    "dynamicAfter": 202,
+    "compileMsMedian": 0.690833,
+    "runMsMedian": 0.009125,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 44,
+    "staticAfter": 39,
+    "dynamicBefore": 203,
+    "dynamicAfter": 177,
+    "compileMsMedian": 0.749458,
+    "runMsMedian": 0.009667,
+    "outputsMatch": true
+   }
+  },
+  "int_widths.c": {
+   "classic": {
+    "staticBefore": 222,
+    "staticAfter": 105,
+    "dynamicBefore": 611,
+    "dynamicAfter": 451,
+    "compileMsMedian": 5.976672,
+    "runMsMedian": 0.024042,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 222,
+    "staticAfter": 101,
+    "dynamicBefore": 611,
+    "dynamicAfter": 361,
+    "compileMsMedian": 1.73,
+    "runMsMedian": 0.018958,
+    "outputsMatch": true
+   }
+  },
+  "is_prime.c": {
+   "classic": {
+    "staticBefore": 32,
+    "staticAfter": 31,
+    "dynamicBefore": 155,
+    "dynamicAfter": 152,
+    "compileMsMedian": 0.395833,
+    "runMsMedian": 0.008209,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 32,
+    "staticAfter": 30,
+    "dynamicBefore": 155,
+    "dynamicAfter": 139,
+    "compileMsMedian": 0.547625,
+    "runMsMedian": 0.00725,
+    "outputsMatch": true
+   }
+  },
+  "lcm.c": {
+   "classic": {
+    "staticBefore": 21,
+    "staticAfter": 16,
+    "dynamicBefore": 35,
+    "dynamicAfter": 30,
+    "compileMsMedian": 0.311541,
+    "runMsMedian": 0.00275,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 21,
+    "staticAfter": 15,
+    "dynamicBefore": 35,
+    "dynamicAfter": 27,
+    "compileMsMedian": 0.454459,
+    "runMsMedian": 0.004833,
+    "outputsMatch": true
+   }
+  },
+  "linear_search.c": {
+   "classic": {
+    "staticBefore": 31,
+    "staticAfter": 30,
+    "dynamicBefore": 47,
+    "dynamicAfter": 47,
+    "compileMsMedian": 0.38795799999999997,
+    "runMsMedian": 0.004667,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 31,
+    "staticAfter": 29,
+    "dynamicBefore": 47,
+    "dynamicAfter": 44,
+    "compileMsMedian": 0.537625,
+    "runMsMedian": 0.004542,
+    "outputsMatch": true
+   }
+  },
+  "matmul.c": {
+   "classic": {
+    "staticBefore": 90,
+    "staticAfter": 88,
+    "dynamicBefore": 642,
+    "dynamicAfter": 612,
+    "compileMsMedian": 3.371919,
+    "runMsMedian": 0.024083,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 90,
+    "staticAfter": 79,
+    "dynamicBefore": 642,
+    "dynamicAfter": 521,
+    "compileMsMedian": 1.7790000000000001,
+    "runMsMedian": 0.021375,
+    "outputsMatch": true
+   }
+  },
+  "max_subarray.c": {
+   "classic": {
+    "staticBefore": 57,
+    "staticAfter": 50,
+    "dynamicBefore": 162,
+    "dynamicAfter": 155,
+    "compileMsMedian": 0.857958,
+    "runMsMedian": 0.007458,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 57,
+    "staticAfter": 45,
+    "dynamicBefore": 162,
+    "dynamicAfter": 137,
+    "compileMsMedian": 0.972416,
+    "runMsMedian": 0.00725,
+    "outputsMatch": true
+   }
+  },
+  "merge_sort.c": {
+   "classic": {
+    "staticBefore": 125,
+    "staticAfter": 118,
+    "dynamicBefore": 621,
+    "dynamicAfter": 570,
+    "compileMsMedian": 2.734455,
+    "runMsMedian": 0.039333,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 125,
+    "staticAfter": 106,
+    "dynamicBefore": 621,
+    "dynamicAfter": 500,
+    "compileMsMedian": 2.296415,
+    "runMsMedian": 0.034833,
+    "outputsMatch": true
+   }
+  },
+  "multi_declarator.c": {
+   "classic": {
+    "staticBefore": 8,
+    "staticAfter": 1,
+    "dynamicBefore": 8,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.22541599999999998,
+    "runMsMedian": 0.000375,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 8,
+    "staticAfter": 1,
+    "dynamicBefore": 8,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.133375,
+    "runMsMedian": 0.000375,
+    "outputsMatch": true
+   }
+  },
+  "my_demo.c": {
+   "classic": {
+    "staticBefore": 18,
+    "staticAfter": 16,
+    "dynamicBefore": 50,
+    "dynamicAfter": 48,
+    "compileMsMedian": 0.299375,
+    "runMsMedian": 0.003541,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 18,
+    "staticAfter": 14,
+    "dynamicBefore": 50,
+    "dynamicAfter": 38,
+    "compileMsMedian": 0.40095899999999995,
+    "runMsMedian": 0.003209,
+    "outputsMatch": true
+   }
+  },
+  "nested_cond.c": {
+   "classic": {
+    "staticBefore": 33,
+    "staticAfter": 25,
+    "dynamicBefore": 36,
+    "dynamicAfter": 34,
+    "compileMsMedian": 0.429292,
+    "runMsMedian": 0.00425,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 33,
+    "staticAfter": 25,
+    "dynamicBefore": 36,
+    "dynamicAfter": 34,
+    "compileMsMedian": 0.466916,
+    "runMsMedian": 0.003833,
+    "outputsMatch": true
+   }
+  },
+  "nested_loop_break.c": {
+   "classic": {
+    "staticBefore": 27,
+    "staticAfter": 22,
+    "dynamicBefore": 68,
+    "dynamicAfter": 62,
+    "compileMsMedian": 0.634209,
+    "runMsMedian": 0.004875,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 27,
+    "staticAfter": 19,
+    "dynamicBefore": 68,
+    "dynamicAfter": 53,
+    "compileMsMedian": 0.74,
+    "runMsMedian": 0.004416,
+    "outputsMatch": true
+   }
+  },
+  "opt_all_passes.c": {
+   "classic": {
+    "staticBefore": 40,
+    "staticAfter": 21,
+    "dynamicBefore": 95,
+    "dynamicAfter": 59,
+    "compileMsMedian": 0.883166,
+    "runMsMedian": 0.003791,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 40,
+    "staticAfter": 17,
+    "dynamicBefore": 95,
+    "dynamicAfter": 47,
+    "compileMsMedian": 0.545333,
+    "runMsMedian": 0.004958,
+    "outputsMatch": true
+   }
+  },
+  "opt_const_chain.c": {
+   "classic": {
+    "staticBefore": 17,
+    "staticAfter": 1,
+    "dynamicBefore": 17,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.349834,
+    "runMsMedian": 0.000416,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 17,
+    "staticAfter": 1,
+    "dynamicBefore": 17,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.176584,
+    "runMsMedian": 0.000417,
+    "outputsMatch": true
+   }
+  },
+  "opt_copy_chain.c": {
+   "classic": {
+    "staticBefore": 13,
+    "staticAfter": 1,
+    "dynamicBefore": 13,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.201958,
+    "runMsMedian": 0.000375,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 13,
+    "staticAfter": 1,
+    "dynamicBefore": 13,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.153084,
+    "runMsMedian": 0.000375,
+    "outputsMatch": true
+   }
+  },
+  "opt_cse_in_loop.c": {
+   "classic": {
+    "staticBefore": 23,
+    "staticAfter": 14,
+    "dynamicBefore": 77,
+    "dynamicAfter": 53,
+    "compileMsMedian": 0.545666,
+    "runMsMedian": 0.004416,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 23,
+    "staticAfter": 12,
+    "dynamicBefore": 77,
+    "dynamicAfter": 41,
+    "compileMsMedian": 0.36975,
+    "runMsMedian": 0.002708,
+    "outputsMatch": true
+   }
+  },
+  "opt_dead_chain.c": {
+   "classic": {
+    "staticBefore": 14,
+    "staticAfter": 1,
+    "dynamicBefore": 14,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.159083,
+    "runMsMedian": 0.000375,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 14,
+    "staticAfter": 1,
+    "dynamicBefore": 14,
+    "dynamicAfter": 1,
+    "compileMsMedian": 0.194042,
+    "runMsMedian": 0.000375,
+    "outputsMatch": true
+   }
+  },
+  "opt_invariant_nested.c": {
+   "classic": {
+    "staticBefore": 30,
+    "staticAfter": 22,
+    "dynamicBefore": 204,
+    "dynamicAfter": 177,
+    "compileMsMedian": 0.714708,
+    "runMsMedian": 0.0085,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 30,
+    "staticAfter": 19,
+    "dynamicBefore": 204,
+    "dynamicAfter": 133,
+    "compileMsMedian": 0.5385840000000001,
+    "runMsMedian": 0.005667,
+    "outputsMatch": true
+   }
+  },
+  "opt_licm_strength.c": {
+   "classic": {
+    "staticBefore": 24,
+    "staticAfter": 16,
+    "dynamicBefore": 122,
+    "dynamicAfter": 96,
+    "compileMsMedian": 0.553333,
+    "runMsMedian": 0.004875,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 24,
+    "staticAfter": 13,
+    "dynamicBefore": 122,
+    "dynamicAfter": 75,
+    "compileMsMedian": 0.407125,
+    "runMsMedian": 0.004167,
+    "outputsMatch": true
+   }
+  },
+  "opt_unreachable_branch.c": {
+   "classic": {
+    "staticBefore": 11,
+    "staticAfter": 4,
+    "dynamicBefore": 7,
+    "dynamicAfter": 2,
+    "compileMsMedian": 0.184416,
+    "runMsMedian": 0.000542,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 11,
+    "staticAfter": 4,
+    "dynamicBefore": 7,
+    "dynamicAfter": 2,
+    "compileMsMedian": 0.167959,
+    "runMsMedian": 0.000667,
+    "outputsMatch": true
+   }
+  },
+  "palindrome_number.c": {
+   "classic": {
+    "staticBefore": 27,
+    "staticAfter": 25,
+    "dynamicBefore": 115,
+    "dynamicAfter": 111,
+    "compileMsMedian": 0.377125,
+    "runMsMedian": 0.005958,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 27,
+    "staticAfter": 23,
+    "dynamicBefore": 115,
+    "dynamicAfter": 91,
+    "compileMsMedian": 0.543625,
+    "runMsMedian": 0.00575,
+    "outputsMatch": true
+   }
+  },
+  "pointers_basic.c": {
+   "classic": {
+    "staticBefore": 86,
+    "staticAfter": 79,
+    "dynamicBefore": 118,
+    "dynamicAfter": 108,
+    "compileMsMedian": 0.910416,
+    "runMsMedian": 0.009333,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 86,
+    "staticAfter": 77,
+    "dynamicBefore": 118,
+    "dynamicAfter": 98,
+    "compileMsMedian": 1.2930460000000001,
+    "runMsMedian": 0.009083,
+    "outputsMatch": true
+   }
+  },
+  "pointers_funcs.c": {
+   "classic": {
+    "staticBefore": 131,
+    "staticAfter": 120,
+    "dynamicBefore": 290,
+    "dynamicAfter": 259,
+    "compileMsMedian": 1.431163,
+    "runMsMedian": 0.019125,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 131,
+    "staticAfter": 111,
+    "dynamicBefore": 290,
+    "dynamicAfter": 227,
+    "compileMsMedian": 2.101547,
+    "runMsMedian": 0.016083,
+    "outputsMatch": true
+   }
+  },
+  "power_iter.c": {
+   "classic": {
+    "staticBefore": 19,
+    "staticAfter": 17,
+    "dynamicBefore": 60,
+    "dynamicAfter": 58,
+    "compileMsMedian": 0.30525,
+    "runMsMedian": 0.004834,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 19,
+    "staticAfter": 15,
+    "dynamicBefore": 60,
+    "dynamicAfter": 44,
+    "compileMsMedian": 0.422666,
+    "runMsMedian": 0.003375,
+    "outputsMatch": true
+   }
+  },
+  "prefix_sum.c": {
+   "classic": {
+    "staticBefore": 39,
+    "staticAfter": 38,
+    "dynamicBefore": 180,
+    "dynamicAfter": 179,
+    "compileMsMedian": 0.43866700000000003,
+    "runMsMedian": 0.009,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 39,
+    "staticAfter": 36,
+    "dynamicBefore": 180,
+    "dynamicAfter": 160,
+    "compileMsMedian": 0.626416,
+    "runMsMedian": 0.008625,
+    "outputsMatch": true
+   }
+  },
+  "preproc_cond.c": {
+   "classic": {
+    "staticBefore": 14,
+    "staticAfter": 4,
+    "dynamicBefore": 14,
+    "dynamicAfter": 4,
+    "compileMsMedian": 0.338541,
+    "runMsMedian": 0.000875,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 14,
+    "staticAfter": 4,
+    "dynamicBefore": 14,
+    "dynamicAfter": 4,
+    "compileMsMedian": 0.197709,
+    "runMsMedian": 0.000875,
+    "outputsMatch": true
+   }
+  },
+  "preproc_indented.c": {
+   "classic": {
+    "staticBefore": 4,
+    "staticAfter": 4,
+    "dynamicBefore": 5,
+    "dynamicAfter": 5,
+    "compileMsMedian": 0.074834,
+    "runMsMedian": 0.000875,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 4,
+    "staticAfter": 4,
+    "dynamicBefore": 5,
+    "dynamicAfter": 5,
+    "compileMsMedian": 0.104708,
+    "runMsMedian": 0.000875,
+    "outputsMatch": true
+   }
+  },
+  "quicksort.c": {
+   "classic": {
+    "staticBefore": 85,
+    "staticAfter": 76,
+    "dynamicBefore": 374,
+    "dynamicAfter": 322,
+    "compileMsMedian": 0.926709,
+    "runMsMedian": 0.020417,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 85,
+    "staticAfter": 70,
+    "dynamicBefore": 374,
+    "dynamicAfter": 283,
+    "compileMsMedian": 1.2602520000000001,
+    "runMsMedian": 0.020042,
+    "outputsMatch": true
+   }
+  },
+  "reverse_array.c": {
+   "classic": {
+    "staticBefore": 53,
+    "staticAfter": 48,
+    "dynamicBefore": 170,
+    "dynamicAfter": 161,
+    "compileMsMedian": 0.96175,
+    "runMsMedian": 0.008,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 53,
+    "staticAfter": 44,
+    "dynamicBefore": 170,
+    "dynamicAfter": 137,
+    "compileMsMedian": 0.8736659999999999,
+    "runMsMedian": 0.007542,
+    "outputsMatch": true
+   }
+  },
+  "sample_linked_list.c": {
+   "classic": {
+    "staticBefore": 91,
+    "staticAfter": 87,
+    "dynamicBefore": 392,
+    "dynamicAfter": 372,
+    "compileMsMedian": 0.95375,
+    "runMsMedian": 0.024458,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 91,
+    "staticAfter": 81,
+    "dynamicBefore": 392,
+    "dynamicAfter": 342,
+    "compileMsMedian": 1.3898320000000002,
+    "runMsMedian": 0.022709,
+    "outputsMatch": true
+   }
+  },
+  "sample_matrix_2d.c": {
+   "classic": {
+    "staticBefore": 144,
+    "staticAfter": 138,
+    "dynamicBefore": 1583,
+    "dynamicAfter": 1236,
+    "compileMsMedian": 6.349043,
+    "runMsMedian": 0.055042,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 144,
+    "staticAfter": 127,
+    "dynamicBefore": 1583,
+    "dynamicAfter": 1112,
+    "compileMsMedian": 3.2445820000000003,
+    "runMsMedian": 0.0505,
+    "outputsMatch": true
+   }
+  },
+  "sample_strings_demo.c": {
+   "classic": {
+    "staticBefore": 264,
+    "staticAfter": 259,
+    "dynamicBefore": 653,
+    "dynamicAfter": 619,
+    "compileMsMedian": 1.597203,
+    "runMsMedian": 0.035958,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 264,
+    "staticAfter": 253,
+    "dynamicBefore": 653,
+    "dynamicAfter": 574,
+    "compileMsMedian": 2.311668,
+    "runMsMedian": 0.034959,
+    "outputsMatch": true
+   }
+  },
+  "sample_student_records.c": {
+   "classic": {
+    "staticBefore": 128,
+    "staticAfter": 119,
+    "dynamicBefore": 349,
+    "dynamicAfter": 285,
+    "compileMsMedian": 3.788786,
+    "runMsMedian": 0.02575,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 128,
+    "staticAfter": 111,
+    "dynamicBefore": 349,
+    "dynamicAfter": 252,
+    "compileMsMedian": 2.4375859999999996,
+    "runMsMedian": 0.022166,
+    "outputsMatch": true
+   }
+  },
+  "selection_sort.c": {
+   "classic": {
+    "staticBefore": 53,
+    "staticAfter": 48,
+    "dynamicBefore": 240,
+    "dynamicAfter": 231,
+    "compileMsMedian": 0.748125,
+    "runMsMedian": 0.010667,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 53,
+    "staticAfter": 46,
+    "dynamicBefore": 240,
+    "dynamicAfter": 211,
+    "compileMsMedian": 0.9050830000000001,
+    "runMsMedian": 0.010375,
+    "outputsMatch": true
+   }
+  },
+  "short_circuit.c": {
+   "classic": {
+    "staticBefore": 28,
+    "staticAfter": 7,
+    "dynamicBefore": 15,
+    "dynamicAfter": 3,
+    "compileMsMedian": 0.52725,
+    "runMsMedian": 0.000833,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 28,
+    "staticAfter": 7,
+    "dynamicBefore": 15,
+    "dynamicAfter": 3,
+    "compileMsMedian": 0.303459,
+    "runMsMedian": 0.000958,
+    "outputsMatch": true
+   }
+  },
+  "sieve.c": {
+   "classic": {
+    "staticBefore": 104,
+    "staticAfter": 102,
+    "dynamicBefore": 1095,
+    "dynamicAfter": 1093,
+    "compileMsMedian": 1.166461,
+    "runMsMedian": 0.034875,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 104,
+    "staticAfter": 95,
+    "dynamicBefore": 1095,
+    "dynamicAfter": 886,
+    "compileMsMedian": 1.2750869999999999,
+    "runMsMedian": 0.028084,
+    "outputsMatch": true
+   }
+  },
+  "static_locals.c": {
+   "classic": {
+    "staticBefore": 64,
+    "staticAfter": 58,
+    "dynamicBefore": 107,
+    "dynamicAfter": 98,
+    "compileMsMedian": 0.565125,
+    "runMsMedian": 0.010208,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 64,
+    "staticAfter": 58,
+    "dynamicBefore": 107,
+    "dynamicAfter": 98,
+    "compileMsMedian": 0.813292,
+    "runMsMedian": 0.01025,
+    "outputsMatch": true
+   }
+  },
+  "stdin_scanf_fgets.c": {
+   "classic": {
+    "staticBefore": 180,
+    "staticAfter": 174,
+    "dynamicBefore": 223,
+    "dynamicAfter": 214,
+    "compileMsMedian": 1.1540869999999999,
+    "runMsMedian": 0.021709,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 180,
+    "staticAfter": 172,
+    "dynamicBefore": 223,
+    "dynamicAfter": 206,
+    "compileMsMedian": 1.572045,
+    "runMsMedian": 0.015583,
+    "outputsMatch": true
+   }
+  },
+  "stdlib_strings_math.c": {
+   "classic": {
+    "staticBefore": 380,
+    "staticAfter": 366,
+    "dynamicBefore": 493,
+    "dynamicAfter": 467,
+    "compileMsMedian": 3.098,
+    "runMsMedian": 0.038291,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 380,
+    "staticAfter": 361,
+    "dynamicBefore": 493,
+    "dynamicAfter": 446,
+    "compileMsMedian": 3.4266699999999997,
+    "runMsMedian": 0.035625,
+    "outputsMatch": true
+   }
+  },
+  "structs_misc.c": {
+   "classic": {
+    "staticBefore": 216,
+    "staticAfter": 192,
+    "dynamicBefore": 329,
+    "dynamicAfter": 288,
+    "compileMsMedian": 10.923217,
+    "runMsMedian": 0.022125,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 216,
+    "staticAfter": 181,
+    "dynamicBefore": 329,
+    "dynamicAfter": 255,
+    "compileMsMedian": 3.4991719999999997,
+    "runMsMedian": 0.02175,
+    "outputsMatch": true
+   }
+  },
+  "tower_of_hanoi.c": {
+   "classic": {
+    "staticBefore": 24,
+    "staticAfter": 23,
+    "dynamicBefore": 599,
+    "dynamicAfter": 568,
+    "compileMsMedian": 0.364,
+    "runMsMedian": 0.035875,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 24,
+    "staticAfter": 23,
+    "dynamicBefore": 599,
+    "dynamicAfter": 568,
+    "compileMsMedian": 0.487333,
+    "runMsMedian": 0.036041,
+    "outputsMatch": true
+   }
+  },
+  "void_side_effects.c": {
+   "classic": {
+    "staticBefore": 8,
+    "staticAfter": 8,
+    "dynamicBefore": 13,
+    "dynamicAfter": 13,
+    "compileMsMedian": 0.128667,
+    "runMsMedian": 0.00125,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 8,
+    "staticAfter": 8,
+    "dynamicBefore": 13,
+    "dynamicAfter": 13,
+    "compileMsMedian": 0.234542,
+    "runMsMedian": 0.001166,
+    "outputsMatch": true
+   }
+  },
+  "worked_example.c": {
+   "classic": {
+    "staticBefore": 27,
+    "staticAfter": 13,
+    "dynamicBefore": 183,
+    "dynamicAfter": 109,
+    "compileMsMedian": 0.557875,
+    "runMsMedian": 0.004542,
+    "outputsMatch": true
+   },
+   "optimized": {
+    "staticBefore": 27,
+    "staticAfter": 11,
+    "dynamicBefore": 183,
+    "dynamicAfter": 83,
+    "compileMsMedian": 0.4615,
+    "runMsMedian": 0.003834,
+    "outputsMatch": true
+   }
+  }
+ },
+ "engines": {
+  "bubble_800.c": {
+   "compileMsMedian": 4.463958000997081,
+   "quad": {
+    "totalMsMedian": 116.83087499113753,
+    "runMs": 112.36691699014045
+   },
+   "vm": {
+    "totalMsMedian": 26.881584024522454,
+    "runMs": 22.417626023525372
+   },
+   "ast": {
+    "totalMsMedian": 132.59062502766028,
+    "runMs": 132.59062502766028
+   },
+   "agree": true
+  },
+  "collatz_30k.c": {
+   "compileMsMedian": 4.629709001164883,
+   "quad": {
+    "totalMsMedian": 703.5342909803148,
+    "runMs": 698.90458197915
+   },
+   "vm": {
+    "totalMsMedian": 179.48991700541228,
+    "runMs": 174.8602080042474
+   },
+   "ast": {
+    "totalMsMedian": 625.0629579881206,
+    "runMs": 625.0629579881206
+   },
+   "agree": true
+  },
+  "fib_rec_24.c": {
+   "compileMsMedian": 4.419833014253527,
+   "quad": {
+    "totalMsMedian": 71.19550000061281,
+    "runMs": 66.77566698635928
+   },
+   "vm": {
+    "totalMsMedian": 21.682332997443154,
+    "runMs": 17.262499983189628
+   },
+   "ast": {
+    "totalMsMedian": 47.473707993049175,
+    "runMs": 47.473707993049175
+   },
+   "agree": true
+  },
+  "matmul_48.c": {
+   "compileMsMedian": 6.700999976601452,
+   "quad": {
+    "totalMsMedian": 89.66062500257976,
+    "runMs": 82.95962502597831
+   },
+   "vm": {
+    "totalMsMedian": 24.925250007072464,
+    "runMs": 18.224250030471012
+   },
+   "ast": {
+    "totalMsMedian": 81.94404101232067,
+    "runMs": 81.94404101232067
+   },
+   "agree": true
+  },
+  "sieve_200k.c": {
+   "compileMsMedian": 36.24708400457166,
+   "quad": {
+    "totalMsMedian": 177.02579201431945,
+    "runMs": 140.7787080097478
+   },
+   "vm": {
+    "totalMsMedian": 77.26137500139885,
+    "runMs": 41.014290996827185
+   },
+   "ast": {
+    "totalMsMedian": 127.99441700917669,
+    "runMs": 127.99441700917669
+   },
+   "agree": true
+  }
+ }
+}

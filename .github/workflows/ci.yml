@@ -57,3 +57,23 @@ jobs:
       # the full pipeline and for every pass enabled completely alone.
       - name: Differential-execution gate
         run: ./scripts/differential.sh
+
+  # The Cppify fork (cppify/MiniCCore) is a separate compiler with its own
+  # suites; the job above never builds it. run_all.sh covers the unit tests,
+  # the positive/negative/boundary suites, golden IR, perf, the differential
+  # gate and the clang oracle (Cppify vs a real C compiler).
+  cppify-core:
+    name: Cppify core on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-latest, ubuntu-latest ]
+    defaults:
+      run:
+        working-directory: cppify/MiniCCore
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Full test suite (includes differential gate and clang oracle)
+        run: ./scripts/run_all.sh

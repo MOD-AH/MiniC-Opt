@@ -38,7 +38,7 @@ no()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; fail=$((fail+1)); }
 ALL_PASSES="fold,constprop,copyprop,cse,dce,unreachable,strength,licm,peephole"
 
 hdr "Differential-execution gate — unoptimized vs. --opt=$ALL_PASSES"
-for f in tests/programs/*.c tests/opt/*.c tests/boundary/*.c; do
+for f in tests/programs/*.c tests/opt/*.c tests/boundary/*.c tests/ssa/*.c; do
   name="$(basename "$f")"
   base="${f%.c}"
   unopt="$(mktemp)"; opt="$(mktemp)"
@@ -59,15 +59,21 @@ for f in tests/programs/*.c tests/opt/*.c tests/boundary/*.c; do
   rm -f "$unopt" "$opt"
 done
 
-hdr "Differential-execution gate — each pass enabled alone"
-for passname in $(echo "$ALL_PASSES" | tr ',' ' '); do
-  for f in tests/programs/*.c tests/opt/*.c tests/boundary/*.c; do
-    name="$(basename "$f") [--opt=$passname]"
+hdr "Differential-execution gate — each pass enabled alone, and each preset (IR verifier on)"
+# Each run also verifies the IR before and after every pass: a malformed
+# result fails here even when the program happens to print the right thing.
+export MINIC_VERIFY=1
+for passname in $(echo "$ALL_PASSES,ssa,sccp,gvn,licm-ssa,ssa-dce" | tr ',' ' ') \
+                preset:balanced preset:optimized; do
+  flag="--opt=$passname"
+  case "$passname" in preset:*) flag="--preset=${passname#preset:}" ;; esac
+  for f in tests/programs/*.c tests/opt/*.c tests/boundary/*.c tests/ssa/*.c; do
+    name="$(basename "$f") [$flag]"
     unopt="$(mktemp)"; opt="$(mktemp)"
     in="${f%.c}.in"; [ -f "$in" ] || in=/dev/null
     timeout 5 "$BIN" --run "$f"                   < "$in" > "$unopt" 2>/dev/null
     ru=$?
-    timeout 5 "$BIN" --run --opt="$passname" "$f" < "$in" > "$opt"   2>/dev/null
+    timeout 5 "$BIN" --run "$flag" "$f" < "$in" > "$opt"   2>/dev/null
     ro=$?
     if [ "$ru" -ne 0 ] || [ "$ro" -ne 0 ]; then
       no "$name  (interpreter exited unopt=$ru opt=$ro)"
