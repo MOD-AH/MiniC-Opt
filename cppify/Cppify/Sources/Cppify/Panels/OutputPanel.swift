@@ -5,16 +5,30 @@ struct OutputPanel: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        ScrollView {
+        AdaptiveScroll {
             VStack(alignment: .leading, spacing: 12) {
                 if let err = model.serviceError {
                     section("Compiler could not run", tint: Palette.errorRed) {
                         Text(err).foregroundStyle(Palette.errorRed)
                     }
                 } else if let run = model.result?.run {
-                    section("Program output", tint: Palette.insertGreen) {
-                        Text(run.optimized.output.isEmpty ? "(no output)" : run.optimized.output)
-                            .foregroundStyle(Palette.textPrimary)
+                    // The engine chosen in the Pipeline tab; every engine ran.
+                    let engines = model.result?.engines
+                    let (engineName, shown, exit): (String, String, Int) = {
+                        switch model.pipeline.engine {
+                        case "vm":  return ("bytecode VM", engines?.vm.output ?? run.optimized.output, engines?.vm.exitCode ?? run.optimized.exitCode)
+                        case "ast": return ("AST interpreter", engines?.reference.output ?? run.optimized.output, engines?.reference.exitCode ?? run.optimized.exitCode)
+                        default:    return ("quad interpreter", run.optimized.output, run.optimized.exitCode)
+                        }
+                    }()
+                    section("Program output  ·  \(engineName)" + (exit != 0 ? "  ·  stopped with a runtime error" : ""),
+                            tint: exit != 0 ? Palette.errorRed : Palette.insertGreen) {
+                        Text(shown.isEmpty ? "(no output)" : shown)
+                            .foregroundStyle(exit != 0 ? Palette.errorRed : Palette.textPrimary)
+                    }
+                    if let e = engines, !e.allAgree {
+                        Text("The engines disagree. See Views → Compare.")
+                            .foregroundStyle(Palette.errorRed)
                     }
 
                     // The differential check, surfaced. This is the project's
@@ -87,22 +101,39 @@ struct ProblemsPanel: View {
                          detail: model.result == nil ? "Press Run to compile."
                                                      : "The program compiled with no diagnostics.")
             } else {
-                ScrollView {
+                AdaptiveScroll {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(model.diagnostics) { d in
                             Button {
                                 model.highlightedLine = d.line
                             } label: {
                                 HStack(alignment: .top, spacing: 9) {
-                                    Image(systemName: "xmark.octagon.fill")
+                                    Image(systemName: d.unsupported == true ? "puzzlepiece.extension.fill"
+                                                      : d.isPrimary ? "xmark.octagon.fill" : "arrow.turn.down.right")
                                         .font(.system(size: 11))
-                                        .foregroundStyle(Palette.errorRed)
-                                    VStack(alignment: .leading, spacing: 2) {
+                                        .foregroundStyle(d.isPrimary ? Palette.errorRed : Palette.textDim)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack(spacing: 6) {
+                                            if let code = d.code {
+                                                Text(code)
+                                                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                                    .foregroundStyle(d.isPrimary ? Palette.changeAmber : Palette.textDim)
+                                                    .padding(.horizontal, 5).padding(.vertical, 1)
+                                                    .background(Color.white.opacity(0.06), in: Capsule())
+                                            }
+                                            if let title = d.title {
+                                                Text(title).font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.textSecondary)
+                                            }
+                                            if d.unsupported == true {
+                                                Text("not supported by Cppify").font(.system(size: 10)).foregroundStyle(Palette.changeAmber)
+                                            }
+                                        }
                                         Text(d.message)
                                             .font(.system(size: 12))
-                                            .foregroundStyle(Palette.textPrimary)
+                                            .foregroundStyle(d.isPrimary ? Palette.textPrimary : Palette.textSecondary)
                                             .multilineTextAlignment(.leading)
-                                        Text("line \(d.line), column \(d.col)  ·  caught by \(d.stage)")
+                                        Text("line \(d.line), column \(d.col)  ·  caught by \(d.stage)"
+                                             + (d.isPrimary ? "" : "  ·  may only follow from the error above"))
                                             .font(.system(size: 10, design: .monospaced))
                                             .foregroundStyle(Palette.textDim)
                                     }

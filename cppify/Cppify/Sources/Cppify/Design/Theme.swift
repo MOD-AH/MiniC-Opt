@@ -2,33 +2,48 @@ import SwiftUI
 
 /// The compiler's operational state. Drives the Liquid Glass tint, so the
 /// window's colour means something rather than being decoration.
+/// Roadmap 5.3: the five outcomes of a Run, plus idle and in progress.
 enum CompilerState: Equatable {
-    case idle, compiling, failed, succeeded
+    case idle, compiling
+    case failed            // compilation failed: lexical, syntax or type errors
+    case unsupported       // the program uses C that Cppify does not implement
+    case executionFailed   // compiled, then stopped with a runtime error
+    case mismatch          // engines or optimization levels disagree: a compiler bug
+    case succeeded
 
     var tint: Color {
         switch self {
-        case .idle:      return Color(red: 0.16, green: 0.42, blue: 0.85)   // cool blue
-        case .compiling: return Color(red: 0.20, green: 0.55, blue: 0.95)
-        case .failed:    return Color(red: 0.75, green: 0.35, blue: 0.12)   // muted amber/red
-        case .succeeded: return Color(red: 0.18, green: 0.70, blue: 0.40)   // calm green
+        case .idle:            return Color(red: 0.16, green: 0.42, blue: 0.85)   // cool blue
+        case .compiling:       return Color(red: 0.20, green: 0.55, blue: 0.95)
+        case .failed:          return Color(red: 0.75, green: 0.35, blue: 0.12)   // muted amber/red
+        case .unsupported:     return Color(red: 0.80, green: 0.60, blue: 0.15)   // amber
+        case .executionFailed: return Color(red: 0.80, green: 0.25, blue: 0.30)   // red
+        case .mismatch:        return Color(red: 0.75, green: 0.20, blue: 0.75)   // magenta: never normal
+        case .succeeded:       return Color(red: 0.18, green: 0.70, blue: 0.40)   // calm green
         }
     }
 
     var label: String {
         switch self {
-        case .idle:      return "Ready"
-        case .compiling: return "Compiling…"
-        case .failed:    return "Build failed"
-        case .succeeded: return "Build succeeded"
+        case .idle:            return "Ready"
+        case .compiling:       return "Compiling…"
+        case .failed:          return "Compilation failed"
+        case .unsupported:     return "Unsupported feature"
+        case .executionFailed: return "Execution failed"
+        case .mismatch:        return "Validation mismatch"
+        case .succeeded:       return "Build succeeded"
         }
     }
 
     var symbol: String {
         switch self {
-        case .idle:      return "circle"
-        case .compiling: return "circle.dotted"
-        case .failed:    return "xmark.circle.fill"
-        case .succeeded: return "checkmark.circle.fill"
+        case .idle:            return "circle"
+        case .compiling:       return "circle.dotted"
+        case .failed:          return "xmark.circle.fill"
+        case .unsupported:     return "puzzlepiece.extension.fill"
+        case .executionFailed: return "exclamationmark.octagon.fill"
+        case .mismatch:        return "exclamationmark.triangle.fill"
+        case .succeeded:       return "checkmark.circle.fill"
         }
     }
 }

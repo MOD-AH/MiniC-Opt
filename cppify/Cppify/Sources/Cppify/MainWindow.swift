@@ -290,30 +290,47 @@ private struct Inspector: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("OPTIMIZATION PASSES")
+                Text("PIPELINE")
                     .font(.system(size: 10, weight: .semibold)).tracking(0.8)
                     .foregroundStyle(Palette.textDim)
+                Picker("", selection: Binding(
+                    get: { model.pipeline.preset },
+                    set: { model.pipeline.apply(preset: $0) })) {
+                    ForEach(PipelineSettings.presets, id: \.self) { Text($0.capitalized).tag($0) }
+                    if model.pipeline.preset == "custom" { Text("Custom").tag("custom") }
+                }
+                .labelsHidden()
+                .disabled(!model.optimizationOn)
+                .help("Correctness: no passes. Balanced: about -O1. Classic: P1–P9. Optimized: SSA passes, then P1–P9 except strength reduction.")
 
-                ForEach(Pass.all) { pass in
-                    PassToggle(pass: pass,
-                               isOn: Binding(
-                                get: { model.enabledPasses.contains(pass.id) },
-                                set: { on in
-                                    if on { model.enabledPasses.insert(pass.id) }
-                                    else { model.enabledPasses.remove(pass.id) }
-                                }),
-                               transforms: model.result?.metrics?.perPass[pass.id],
-                               enabled: model.optimizationOn)
+                Text("lexer \(model.pipeline.lexer) · parser \(model.pipeline.parser) · engine \(model.pipeline.engine)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Palette.textSecondary)
+                Button("Edit in the Pipeline tab") { model.selectedTab = .pipeline }
+                    .buttonStyle(.link)
+                    .font(.system(size: 11))
+
+                Text("PASSES, IN RUN ORDER")
+                    .font(.system(size: 10, weight: .semibold)).tracking(0.8)
+                    .foregroundStyle(Palette.textDim)
+                if model.pipeline.groups.isEmpty || !model.optimizationOn {
+                    Text("None: the program runs exactly as generated.")
+                        .font(.system(size: 11)).foregroundStyle(Palette.textDim)
+                }
+                ForEach(Array(model.pipeline.groups.enumerated()), id: \.element.id) { gi, g in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(gi + 1). " + (g.passes.contains(where: PipelineSettings.isSSA) ? "in SSA form" : "on TAC")
+                             + (g.fixpoint ? ", to a fixed point" : ", \(g.sweeps)×"))
+                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.textDim)
+                        ForEach(Array(g.passes.enumerated()), id: \.offset) { _, id in
+                            PassRow(id: id, transforms: model.result?.metrics?.perPass[id])
+                        }
+                    }
                 }
 
-                Divider().overlay(Palette.panelBorder)
-
-                HStack {
-                    Button("All") { model.enabledPasses = Set(Pass.all.map(\.id)) }
-                    Button("None") { model.enabledPasses = [] }
+                if let r = model.result, r.ok {
+                    LastRunSummary(result: r)
                 }
-                .buttonStyle(.link)
-                .font(.system(size: 11))
             }
             .padding(14)
         }
@@ -321,38 +338,77 @@ private struct Inspector: View {
     }
 }
 
-private struct PassToggle: View {
-    let pass: Pass
-    @Binding var isOn: Bool
-    let transforms: Int?
-    let enabled: Bool
+/// What the compiler reports about the run itself: the pass order it
+/// resolved, how long each stage took, and how often the analysis cache
+/// saved a recomputation.
+private struct LastRunSummary: View {
+    let result: CompileResult
+    private static let stages = ["lex", "parse", "sema", "irgen", "optimize", "runUnoptimized", "runOptimized"]
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Toggle("", isOn: $isOn).labelsHidden().controlSize(.mini).disabled(!enabled)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(pass.number)
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Palette.textDim)
-                    Text(pass.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(enabled && isOn ? Palette.textPrimary : Palette.textDim)
-                    if let t = transforms, t > 0 {
-                        Text("\(t)")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Palette.insertGreen)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Palette.insertGreen.opacity(0.15), in: Capsule())
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().overlay(Palette.panelBorder)
+            if let p = result.pipeline {
+                caption("LAST RUN · \(p.preset.uppercased())")
+                ForEach(Array(p.groups.enumerated()), id: \.offset) { i, g in
+                    Text("\(i + 1). \(g.order)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(pass.id)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Palette.textDim)
             }
-            Spacer(minLength: 0)
+            if let t = result.timingsMs {
+                caption("STAGE TIMES (ms)")
+                ForEach(Self.stages.filter { t[$0] != nil }, id: \.self) { s in
+                    row(s, String(format: "%.3f", t[s] ?? 0))
+                }
+            }
+            if let a = result.analyses, !a.isEmpty {
+                caption("ANALYSES (computed / cached)")
+                ForEach(a.keys.sorted(), id: \.self) { k in
+                    row(k, "\(a[k]!.computed) / \(a[k]!.reused)")
+                }
+            }
         }
-        .help(pass.what)
+    }
+
+    private func caption(_ s: String) -> some View {
+        Text(s).font(.system(size: 9, weight: .semibold)).tracking(0.8).foregroundStyle(Palette.textDim)
+    }
+    private func row(_ k: String, _ v: String) -> some View {
+        HStack {
+            Text(k).font(.system(size: 10)).foregroundStyle(Palette.textSecondary)
+            Spacer()
+            Text(v).font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.textPrimary)
+        }
+    }
+}
+
+private struct PassRow: View {
+    let id: String
+    let transforms: Int?
+
+    var body: some View {
+        let meta = Pass.named(id)
+        HStack(spacing: 5) {
+            Text(meta?.number ?? "")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(Palette.textDim)
+                .frame(width: 26, alignment: .leading)
+            Text(meta?.title ?? id)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if let t = transforms, t > 0 {
+                Text("\(t)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Palette.insertGreen)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Palette.insertGreen.opacity(0.15), in: Capsule())
+            }
+        }
+        .help(meta?.what ?? id)
     }
 }
 
@@ -394,6 +450,8 @@ private struct Dock: View {
                 case .output:     OutputPanel(model: model)
                 case .problems:   ProblemsPanel(model: model)
                 case .processing: ProcessingPanel(model: model)
+                case .pipeline:   PipelinePanel(model: model)
+                case .views:      ViewsPanel(model: model)
                 case .language:   LanguagePanel(model: model)
                 }
             }

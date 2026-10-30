@@ -46,33 +46,73 @@ final class CompilerService {
 
     // MARK: - Compiling
 
-    /// Writes `source` to a scratch file and runs the full trace over it.
-    /// The temp file is removed even when the run throws.
-    func compile(source: String, stdin: String, passes: Set<String>, optimize: Bool) async throws -> CompileResult {
+    /// Writes `source` to a scratch file and runs the full trace over it with
+    /// the given pipeline (roadmap 5.1). The temp files are removed even when
+    /// the run throws.
+    func compile(source: String, stdin: String, pipeline: PipelineSettings, optimize: Bool) async throws -> CompileResult {
         guard let compiler = compilerURL else { throw ServiceError.compilerMissing }
-
-        let scratch = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cppify-\(UUID().uuidString).c")
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("cppify-\(UUID().uuidString).c")
+        let config = scratch.deletingPathExtension().appendingPathExtension("json")
         try source.write(to: scratch, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: scratch) }
-
-        var args = ["--trace-json"]
-        if !optimize {
-            args.append("--no-opt")
-        } else if passes.count < Pass.all.count {
-            args.append("--opt=" + Pass.all.map(\.id).filter(passes.contains).joined(separator: ","))
+        defer {
+            try? FileManager.default.removeItem(at: scratch)
+            try? FileManager.default.removeItem(at: config)
         }
+        var args = ["--trace-json"] + frontEndArgs(pipeline)
+        args += try pipelineArgs(pipeline, optimize: optimize, config: config)
         args.append(scratch.path)
 
         let out = try await run(compiler, args: args, timeout: Self.runTimeLimit, stdin: stdin)
         guard let data = out.stdout.data(using: .utf8), !data.isEmpty else {
-            throw ServiceError.badOutput("empty response")
+            // An invalid --config is reported on stderr with exit status 3.
+            throw ServiceError.badOutput(out.stderr.isEmpty ? "empty response" : out.stderr.trimmed)
         }
         do {
             return try JSONDecoder().decode(CompileResult.self, from: data)
         } catch {
             throw ServiceError.badOutput(String(describing: error))
         }
+    }
+
+    /// `--bench-engines=N`: each engine run `runs` times in-process, medians.
+    func benchmark(source: String, stdin: String, pipeline: PipelineSettings, runs: Int) async throws -> BenchResult {
+        guard let compiler = compilerURL else { throw ServiceError.compilerMissing }
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("cppify-\(UUID().uuidString).c")
+        let config = scratch.deletingPathExtension().appendingPathExtension("json")
+        try source.write(to: scratch, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: scratch)
+            try? FileManager.default.removeItem(at: config)
+        }
+        var args = ["--bench-engines=\(runs)"] + frontEndArgs(pipeline)
+        args += try pipelineArgs(pipeline, optimize: true, config: config)
+        args.append(scratch.path)
+        // Three engines, `runs` times each: allow for that.
+        let out = try await run(compiler, args: args, timeout: Self.runTimeLimit * Double(3 * runs + 1), stdin: stdin)
+        guard let data = out.stdout.data(using: .utf8), !data.isEmpty else {
+            throw ServiceError.badOutput(out.stderr.isEmpty ? "empty response" : out.stderr.trimmed)
+        }
+        return try JSONDecoder().decode(BenchResult.self, from: data)
+    }
+
+    /// The compiler's technique registry (`--list-techniques`, roadmap 1.3).
+    func techniques() async -> [Technique] {
+        guard let compiler = compilerURL,
+              let out = try? await run(compiler, args: ["--list-techniques"], timeout: 10),
+              let data = out.stdout.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([Technique].self, from: data)) ?? []
+    }
+
+    private func frontEndArgs(_ p: PipelineSettings) -> [String] {
+        ["--lexer=\(p.lexer)", "--parser=\(p.parser)"]
+    }
+
+    /// A preset by name; anything else as a --config file written to `config`.
+    private func pipelineArgs(_ p: PipelineSettings, optimize: Bool, config: URL) throws -> [String] {
+        if !optimize || p.preset == "correctness" { return ["--no-opt"] }
+        if PipelineSettings.presets.contains(p.preset) { return ["--preset=\(p.preset)"] }
+        try p.configJSON().write(to: config, atomically: true, encoding: .utf8)
+        return ["--config=\(config.path)"]
     }
 
     // MARK: - The production-compiler comparison

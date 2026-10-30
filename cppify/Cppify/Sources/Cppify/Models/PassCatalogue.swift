@@ -62,5 +62,35 @@ struct Pass: Identifiable, Hashable {
              refuses: "Reordering successors. Redirecting an edge replaces the target in place at its existing index, because an IF_FALSE block's successor order encodes which edge is the branch and which is the fall-through, and branch folding depends on it."),
     ]
 
-    static func named(_ id: String) -> Pass? { all.first { $0.id == id } }
+    /// The SSA passes run by the Optimized preset. They are not toggles: the
+    /// compiler orders them and brackets them with SSA construction and
+    /// destruction itself.
+    static let ssa: [Pass] = [
+        Pass(id: "ssa", number: "SSA", title: "SSA Construction",
+             what: "Gives every value exactly one definition. Where different definitions of a variable meet, a phi selects the one that matches the edge taken; every use is then renamed to the single definition it reads.",
+             licensedBy: "Dominators and dominance frontiers (Cytron et al.): a phi is needed exactly where a definition stops dominating, and only where the variable is still live.",
+             refuses: "Memory. Arrays, address-taken variables and globals are not renamed; alias analysis reasons about them instead."),
+        Pass(id: "sccp", number: "S1", title: "Sparse Conditional Constant Propagation",
+             what: "Finds every value that is the same constant on all paths that can actually run, and every branch that can only go one way, then folds them.",
+             licensedBy: "SSA def-use chains plus executable edges (Wegman and Zadeck). It assumes code is unreachable until proven otherwise, so it finds constants that flow around loops.",
+             refuses: "Anything that would trap at run time, such as a division by zero: that stays unknown and runs exactly as before."),
+        Pass(id: "gvn", number: "S2", title: "Global Value Numbering",
+             what: "Reuses a computation already made in a block that dominates this one: same operation, same values, so the same result.",
+             licensedBy: "The dominator tree. A dominating block has certainly run, with the same SSA operands, whenever this one is reached.",
+             refuses: "Globals and memory as operands, since another function or a store could change them in between."),
+        Pass(id: "licm-ssa", number: "S3", title: "Loop-Invariant Code Motion (SSA)",
+             what: "Moves an instruction whose operands are all defined outside the loop to the preheader, including loads and divisions by a constant that P8 never moves.",
+             licensedBy: "SSA (an operand defined outside the loop cannot change inside it), natural loops, and alias analysis for loads.",
+             refuses: "A load that a store or call in the loop might change, and one that could trap earlier than it used to: it must be in bounds of a known local array, or the first thing the loop header does."),
+        Pass(id: "ssa-dce", number: "S4", title: "Mark-Sweep Dead Code Elimination",
+             what: "Keeps only instructions that an effect (a store, call, branch, return or global write) transitively needs, and deletes the rest.",
+             licensedBy: "SSA def-use chains, walked backwards from every effect.",
+             refuses: "Branches (there is no control-dependence analysis), and anything that may trap."),
+        Pass(id: "out-of-ssa", number: "SSA", title: "SSA Destruction",
+             what: "Turns each phi into copies on its incoming edges, then merges the two names of any copy whose live ranges never overlap and deletes the copy.",
+             licensedBy: "Live variables, used to build the interference between names (Chaitin-style coalescing).",
+             refuses: "Merging two different source variables: a temporary can join a variable, but i and j never become one name."),
+    ]
+
+    static func named(_ id: String) -> Pass? { (all + ssa).first { $0.id == id } }
 }

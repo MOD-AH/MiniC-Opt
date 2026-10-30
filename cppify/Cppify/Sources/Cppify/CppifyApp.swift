@@ -4,6 +4,10 @@ import SwiftUI
 struct CppifyApp: App {
     @State private var model = AppModel()
 
+    init() {
+        SnapshotRenderer.runIfRequested()   // exits when asked to; otherwise does nothing
+    }
+
     var body: some Scene {
         WindowGroup("Cppify — MiniC Optimizing Compiler") {
             MainWindow(model: model)
@@ -52,8 +56,16 @@ final class AppModel {
     var comparing = false
     var timedOut = false
 
-    var enabledPasses: Set<String> = Set(Pass.all.map(\.id))
     var optimizationOn = true
+    /// What the Pipeline tab chose (roadmap 5.1).
+    var pipeline = PipelineSettings.safeDefaults
+    /// The compiler's technique registry, read once at launch.
+    var techniques: [Technique] = []
+    var viewTab: ViewTab = .tokens
+    var bench: BenchResult?
+    var benchRunning = false
+    var benchError: String?
+    var benchRuns = 9
 
     var selectedTab: DockTab = .processing
     /// Which (sweep, pass) the Processing panel is showing.
@@ -62,6 +74,36 @@ final class AppModel {
     var highlightedLine: Int?
 
     private let service = CompilerService()
+
+    init() {
+        Task { self.techniques = await service.techniques() }
+    }
+
+    /// Times the three engines on the current program (Benchmark view).
+    func runBenchmark() async {
+        benchRunning = true
+        benchError = nil
+        defer { benchRunning = false }
+        do {
+            bench = try await service.benchmark(source: source, stdin: programInput, pipeline: pipeline, runs: benchRuns)
+        } catch {
+            bench = nil
+            benchError = error.localizedDescription
+        }
+    }
+
+    /// Roadmap 5.3: what happened, in one of five states.
+    static func outcome(of r: CompileResult, subsetIssues: Bool) -> CompilerState {
+        if !r.ok {
+            let unsupported = subsetIssues || r.diagnostics.contains { $0.unsupported == true }
+            return unsupported ? .unsupported : .failed
+        }
+        if let run = r.run {
+            if run.unoptimized.exitCode != 0 || run.optimized.exitCode != 0 { return .executionFailed }
+            if !run.outputsMatch || r.engines?.allAgree == false { return .mismatch }
+        }
+        return .succeeded
+    }
 
     var diagnostics: [Diagnostic] { result?.diagnostics ?? [] }
 
@@ -105,12 +147,14 @@ final class AppModel {
         do {
             let r = try await service.compile(source: source,
                                               stdin: programInput,
-                                              passes: enabledPasses,
+                                              pipeline: pipeline,
                                               optimize: optimizationOn)
             compileSeconds = Date().timeIntervalSince(started)
             result = r
-            state = r.ok ? .succeeded : .failed
+            bench = nil
+            state = AppModel.outcome(of: r, subsetIssues: !subsetIssues.isEmpty)
             if !r.ok { selectedTab = .problems }
+            if state == .executionFailed || state == .mismatch { selectedTab = .output }
             if r.ok {
                 // Pre-select the first pass that actually did something, so
                 // the panel opens on content rather than an empty state.
@@ -223,10 +267,18 @@ struct PassSelection: Equatable, Hashable {
     let passID: String
 }
 
+/// The views of roadmap 5.2, inside the Views tab.
+enum ViewTab: String, CaseIterable, Identifiable {
+    case tokens = "Tokens", ast = "AST", cfg = "CFG", ssa = "SSA IR", compare = "Compare", benchmark = "Benchmark"
+    var id: String { rawValue }
+}
+
 enum DockTab: String, CaseIterable, Identifiable {
     case output = "Output"
     case problems = "Problems"
     case processing = "Processing"
+    case pipeline = "Pipeline"
+    case views = "Views"
     case language = "Language"
     var id: String { rawValue }
 
@@ -235,6 +287,8 @@ enum DockTab: String, CaseIterable, Identifiable {
         case .output:     return "terminal"
         case .problems:   return "exclamationmark.triangle"
         case .processing: return "wand.and.rays"
+        case .pipeline:   return "slider.horizontal.3"
+        case .views:      return "square.stack.3d.up"
         case .language:   return "character.book.closed"
         }
     }

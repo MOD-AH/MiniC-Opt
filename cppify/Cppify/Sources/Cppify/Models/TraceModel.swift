@@ -12,6 +12,73 @@ struct Diagnostic: Codable, Identifiable, Hashable {
     let col: Int
     let severity: String
     let message: String
+    // Roadmap 5.4. Optional so an older compiler's output still decodes.
+    let code: String?        // stable, e.g. "CPPIFY-PARSE-002"
+    let title: String?       // the code's category
+    let unsupported: Bool?   // C that Cppify deliberately does not implement
+    let primary: Bool?       // false: may only be a consequence of an earlier error
+
+    var isPrimary: Bool { primary ?? true }
+}
+
+// ---- views (roadmap 5.2) ----------------------------------------------------
+
+struct TokenInfo: Codable, Hashable {
+    let type: String
+    let lexeme: String
+    let line: Int
+    let col: Int
+}
+
+struct BlockInfo: Codable, Hashable, Identifiable {
+    let id: Int
+    let lines: [String]
+    let succs: [Int]
+}
+
+struct FunctionCFG: Codable, Hashable, Identifiable {
+    var id: String { name }
+    let name: String
+    let blocks: [BlockInfo]
+}
+
+struct CFGSet: Codable, Hashable {
+    let unoptimized: [FunctionCFG]
+    let optimized: [FunctionCFG]
+}
+
+struct FunctionLines: Codable, Hashable, Identifiable {
+    var id: String { name }
+    let name: String
+    let lines: [String]
+}
+
+struct EngineResult: Codable, Hashable {
+    let exitCode: Int
+    let output: String
+    let ms: Double
+}
+
+/// The AST reference interpreter and the bytecode VM (roadmap 3.1, 3.2).
+struct EngineReport: Codable, Hashable {
+    let reference: EngineResult
+    let vm: EngineResult
+    let allAgree: Bool
+}
+
+struct FrontEndInfo: Codable, Hashable {
+    let lexer: String
+    let parser: String
+}
+
+/// `minic --bench-engines=N`: medians of N in-process runs.
+struct BenchResult: Codable, Hashable {
+    let runs: Int
+    let compileMs: Double
+    let quadMs: Double
+    let vmMs: Double
+    let astMs: Double
+    let agree: Bool
 }
 
 struct TraceEdit: Codable, Identifiable, Hashable {
@@ -91,6 +158,26 @@ struct Metrics: Codable, Hashable {
     }
 }
 
+/// The pipeline that actually ran, as the compiler resolved it.
+struct PipelineGroupInfo: Codable, Hashable {
+    let passes: [String]
+    let fixpoint: Bool
+    let sweeps: Int
+    let ssa: Bool
+    let order: String        // e.g. "ssa -> [sccp, gvn] to a fixed point ... -> out-of-ssa"
+}
+
+struct PipelineInfo: Codable, Hashable {
+    let preset: String
+    let groups: [PipelineGroupInfo]
+}
+
+/// How often an analysis was computed, and how often the cache served it.
+struct AnalysisCount: Codable, Hashable {
+    let computed: Int
+    let reused: Int
+}
+
 struct CompileResult: Codable {
     let ok: Bool
     let diagnostics: [Diagnostic]
@@ -98,6 +185,18 @@ struct CompileResult: Codable {
     let trace: [FunctionTrace]?
     let metrics: Metrics?
     let run: RunReport?
+    /// Absent on a failed compile, and from compilers older than roadmap 1.5.
+    let pipeline: PipelineInfo?
+    // Roadmap 5.2 views. Tokens are present even when the build fails; the
+    // AST once the program parses; the rest once it compiles.
+    let tokens: [TokenInfo]?
+    let ast: String?
+    let frontEnd: FrontEndInfo?
+    let engines: EngineReport?
+    let cfg: CFGSet?
+    let ssa: [FunctionLines]?
+    let timingsMs: [String: Double]?
+    let analyses: [String: AnalysisCount]?
     /// Present only when the compiler could not open the file at all.
     let error: String?
 }

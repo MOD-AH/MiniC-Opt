@@ -43,7 +43,8 @@ struct BackgroundMesh: View {
     private var accent: Color {
         switch state {
         case .idle, .compiling: return Color(red: 0.45, green: 0.30, blue: 0.85)
-        case .failed:           return Color(red: 0.85, green: 0.25, blue: 0.30)
+        case .failed, .executionFailed, .unsupported, .mismatch:
+                                return Color(red: 0.85, green: 0.25, blue: 0.30)
         case .succeeded:        return Color(red: 0.20, green: 0.60, blue: 0.75)
         }
     }
