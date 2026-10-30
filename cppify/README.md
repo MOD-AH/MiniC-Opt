@@ -7,6 +7,16 @@ code, compile, see errors, run — plus one thing no other IDE has: a
 **Processing** panel that explains, pass by pass and edit by edit, exactly
 what the optimizer did and why it was allowed to.
 
+## Download
+
+**[Download the latest Cppify for macOS](https://github.com/MOD-AH/MiniC-Opt/releases/latest)**
+
+Requires an Apple Silicon Mac (M1 or later) and macOS 26+.
+
+First launch: the app isn't notarized, so macOS will block it once.
+Right-click **Cppify.app** → **Open** → **Open**. If there's no Open button,
+go to System Settings → Privacy & Security → **Open Anyway**.
+
 ## Running it
 
 ```bash
