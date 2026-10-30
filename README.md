@@ -4,6 +4,9 @@
 
 BCSE307L Compiler Design · Course Project · Team ____
 
+> **Also in this repository: [Cppify](#cppify--a-macos-ide-for-minic-opt)**, a native macOS IDE
+> built on this compiler, which explains every optimization it performs. See [`cppify/`](cppify/).
+
 ---
 
 ## What this is
@@ -182,7 +185,46 @@ tests/negative/     programs with one deliberate defect each
 tests/unit/         GoogleTest unit tests
 docs/               grammar, test plan, worked example
 scripts/            build and test automation
+cppify/             Cppify, the macOS IDE (separate fork of the compiler; see below)
 ```
+
+---
+
+## Cppify — a macOS IDE for MiniC-Opt
+
+<p align="center"><img src="cppify/branding/preview-icon.png" width="128" alt="Cppify icon"></p>
+
+[`cppify/`](cppify/) is a native macOS app (SwiftUI, macOS 26+) that works like
+CodeBlocks or Geany for this compiler: write code, compile, see errors, run. It
+adds one thing a normal IDE doesn't have, a **Processing** panel that walks
+through every optimization sweep and pass, shows the IR before and after, and
+gives the reason behind each rewrite. The reasons are written by the pass that
+made the change, not guessed afterwards from the IR.
+
+| Panel | What it shows |
+|---|---|
+| Editor | syntax highlighting, line numbers, errors marked on their line |
+| Output | program output, plus a check that optimized and unoptimized runs print the same thing |
+| Problems | compiler diagnostics, and plain-language notes on any C feature still unsupported |
+| Processing | sweep → pass → before/after IR → the reason for each edit, ending in a comparison with `clang -O0 / -O2` |
+| Language | what the language currently supports |
+
+Cppify runs on **`cppify/MiniCCore`**, a fork of this compiler extended well
+beyond the MiniC subset: pointers, `struct` / `typedef` / `enum`,
+multi-dimensional arrays, `switch`, `goto`, `?:`, `sizeof`, `#define`, and a C
+library layer (printf/scanf with full formatting, `<string.h>`, `<math.h>`,
+`<ctype.h>`, `malloc` / `free`). The fork keeps the original's guarantees: its
+own suite passes 724 / 0, the differential gate 1070 / 0, and the golden IR is
+unchanged.
+
+**The compiler at the root of this repository is not modified by Cppify**, and CI
+builds and tests only that root compiler.
+
+```bash
+cd cppify && ./build-app.sh release && open Cppify.app
+```
+
+Full details are in [`cppify/README.md`](cppify/README.md).
 
 ---
 
