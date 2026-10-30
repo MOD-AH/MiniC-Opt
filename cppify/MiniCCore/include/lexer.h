@@ -7,6 +7,7 @@
 #pragma once
 #include "token.h"
 #include "diagnostic.h"
+#include "preprocessor.h"
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -30,11 +31,10 @@ private:
     int         col_  = 1;
     std::vector<Diagnostic> errors_;
 
-    // Object-like `#define NAME text` macros, plus a few predefined ones
-    // (NULL, true, false, EOF, INT_MAX...). Expanded token-by-token at the
-    // point of use, never textually, so a macro can't change how a literal or
-    // identifier is split.
-    std::unordered_map<std::string, std::string> macros_;
+    // Macros and conditional compilation (shared with the re2c lexer).
+    // A macro is expanded token by token at the point of use, never
+    // textually, so it can't change how a literal or identifier is split.
+    Preprocessor pp_;
     void defineMacroFromLine();
     void expandMacro(const std::string& name, int l, int c, std::vector<Token>& out);
 

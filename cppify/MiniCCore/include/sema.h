@@ -114,6 +114,7 @@ private:
     void wrapConversionIfNeeded(std::unique_ptr<Expr>& slot, TypeSpec target);
 
     static TypeSpec usualArith(TypeSpec a, TypeSpec b);
+    static TypeSpec promote(TypeSpec t);
     // Division/modulo by a literal 0 (IntLit 0, or FloatLit 0.0 for /)
     // is statically detectable instead of deferring it to a runtime
     // crash - diagnoses it the same way the other five categories do.

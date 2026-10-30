@@ -35,6 +35,7 @@
 // without one is left untouched rather than attempted unsoundly.
 #include "opt_passes.h"
 #include "loop_util.h"
+#include <map>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -57,7 +58,24 @@ bool isIntConst(const Operand& o, long long& out) {
 // *observable* point -- where `i`'s new value actually lands), and the
 // arithmetic is read out of the quad immediately before it.
 bool isBasicInductionStep(const std::vector<Quad>& code, size_t atIdx, const std::string& i, long long& step) {
-    if (atIdx == 0 || atIdx >= code.size()) return false;
+    if (atIdx >= code.size()) return false;
+    // The one-quad form `i = i +/- C`: what out-of-SSA leaves once it has
+    // coalesced the temporary away (the optimized preset runs P7 after SSA).
+    const Quad& one = code[atIdx];
+    Operand w1;
+    long long c1 = 0;
+    if ((one.op == Op::ADD || one.op == Op::SUB) && writesOf(one, w1) && w1.name == i) {
+        if (isNameOperand(one.arg1) && one.arg1.name == i && isIntConst(one.arg2, c1)) {
+            step = (one.op == Op::ADD) ? c1 : -c1;
+            return true;
+        }
+        if (one.op == Op::ADD && isNameOperand(one.arg2) && one.arg2.name == i && isIntConst(one.arg1, c1)) {
+            step = c1;
+            return true;
+        }
+        return false;
+    }
+    if (atIdx == 0) return false;
     const Quad& copyQ = code[atIdx];
     if (copyQ.op != Op::COPY) return false;
     Operand w;
@@ -119,7 +137,7 @@ public:
         count_ = 0;
         edits_.clear();
         int fresh = 0;
-        for (const NaturalLoop& lp : findNaturalLoops(cfg)) {
+        for (const NaturalLoop& lp : findNaturalLoops(cfg, analyses().dominators(cfg))) {
             if (lp.preheader < 0) continue;
             // Find every basic induction variable: exactly one write in
             // the loop, of the `i = i +/- C` shape.
@@ -142,22 +160,34 @@ public:
 
                 // Every distinct K this induction variable is multiplied
                 // by anywhere in the loop (excluding the update itself).
-                std::set<long long> ks;
+                // Each K also carries the integer type its multiplies wrap
+                // to; the mirror variable has to wrap the same way. A K used
+                // at two different types is left alone.
+                std::map<long long, IntTy> ks;
+                std::set<long long> mixed;
                 for (int bi : lp.blocks)
                     for (size_t qi = 0; qi < cfg.block(bi).code.size(); ++qi) {
                         if (bi == updateBlock && static_cast<int>(qi) == updateIdx) continue;
                         long long k;
-                        if (isMultiplyByConst(cfg.block(bi).code[qi], iName, k)) ks.insert(k);
+                        const Quad& mq = cfg.block(bi).code[qi];
+                        if (!isMultiplyByConst(mq, iName, k)) continue;
+                        auto [it, fresh] = ks.emplace(k, mq.ty);
+                        if (!fresh && it->second != mq.ty) mixed.insert(k);
                     }
+                for (long long k : mixed) ks.erase(k);
                 if (ks.empty()) continue;
 
-                for (long long k : ks) {
+                for (auto [k, kty] : ks) {
                     std::string m = freshName(cfg, fresh++);
                     // Preheader: m = i * K  (i's value at loop entry).
-                    Quad init; init.op = Op::MUL; init.arg1 = mkVar(iName); init.arg2 = mkI(k); init.result = mkVar(m);
+                    // The induction variable's own operand, not a rebuilt one:
+                    // a global `i` read as a temporary would read the frame,
+                    // not the global, and start the mirror at 0.
+                    Quad init; init.op = Op::MUL; init.arg1 = cfg.block(updateBlock).code[static_cast<size_t>(updateIdx)].result;
+                    init.arg2 = mkI(k); init.result = mkVar(m); init.ty = kty;
                     appendToPreheader(cfg, lp.preheader, {init});
                     // Immediately after i's own update: m = m + step*K.
-                    Quad bump; bump.op = Op::ADD; bump.arg1 = mkVar(m); bump.arg2 = mkI(step * k); bump.result = mkVar(m);
+                    Quad bump; bump.op = Op::ADD; bump.arg1 = mkVar(m); bump.arg2 = mkI(step * k); bump.result = mkVar(m); bump.ty = kty;
                     cfg.block(updateBlock).code.insert(cfg.block(updateBlock).code.begin() + updateIdx + 1, bump);
 
                     // Rewrite every `i*K`/`K*i` in the loop to `= m`. The
@@ -173,7 +203,7 @@ public:
                             if (bi == updateBlock && (static_cast<int>(qi) == updateIdx || static_cast<int>(qi) == updateIdx + 1))
                                 continue;   // the induction update, and the bump we just inserted
                             long long kk;
-                            if (isMultiplyByConst(b.code[qi], iName, kk) && kk == k) {
+                            if (isMultiplyByConst(b.code[qi], iName, kk) && kk == k && b.code[qi].ty == kty) {
                                 std::string beforeTxt = b.code[qi].toString();
                                 b.code[qi].op = Op::COPY;
                                 b.code[qi].arg1 = mkVar(m);

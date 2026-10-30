@@ -73,10 +73,9 @@ public:
     bool run(CFG& cfg) override {
         count_ = 0;
         edits_.clear();
-        // Recomputed fresh on every call, like P2/P3's reaching-definitions
-        // walk — cheap relative to the sweep, and always reflects whatever
-        // an earlier pass in this same sweep already changed.
-        DataFlowResult live = computeLiveVariables(cfg, IRFunction{});
+        // From the analysis cache, which is dropped whenever an earlier pass
+        // changed the IR, so this always reflects the CFG as it is now.
+        const DataFlowResult& live = analyses().liveVariables(cfg);
         for (size_t bi = 0; bi < cfg.blocks().size(); ++bi) {
             BasicBlock& b = cfg.block(static_cast<int>(bi));
             std::set<std::string> liveNow = live.out[bi];

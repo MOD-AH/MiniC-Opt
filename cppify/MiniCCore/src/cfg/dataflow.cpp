@@ -93,7 +93,7 @@ void solve(CFG& cfg, const DataFlowSpec& spec, int iterationCap) {
 
 // ---- reaching definitions (forward, union) -----------------------------
 
-ReachingDefFacts computeReachingDefsRaw(CFG& cfg) {
+ReachingDefFacts computeReachingDefsRaw(CFG& cfg, bool entryDefinitions) {
     size_t n = cfg.blocks().size();
     ReachingDefFacts facts;
     facts.defIdOfQuad.resize(n);
@@ -110,6 +110,25 @@ ReachingDefFacts computeReachingDefsRaw(CFG& cfg) {
             facts.defQuad.push_back(b.code[qi]);
             allDefsOfVar[w.name].push_back(id);
             facts.defIdOfQuad[bi][qi] = id;
+        }
+    }
+    std::set<int> entryDefs;
+    if (entryDefinitions) {
+        std::set<std::string> locals;
+        for (const auto& b : cfg.blocks())
+            for (const Quad& q : b.code)
+                for (const Operand& r : readsOf(q))
+                    if (r.kind == OperandKind::VARIABLE && r.name.find('#') != std::string::npos) locals.insert(r.name);
+        for (const auto& name : locals) {
+            int id = static_cast<int>(facts.defVar.size());
+            Quad entry;
+            entry.op = Op::NOP;
+            entry.result.kind = OperandKind::VARIABLE;
+            entry.result.name = name;
+            facts.defVar.push_back(name);
+            facts.defQuad.push_back(entry);
+            allDefsOfVar[name].push_back(id);
+            entryDefs.insert(id);
         }
     }
 
@@ -137,7 +156,7 @@ ReachingDefFacts computeReachingDefsRaw(CFG& cfg) {
     DataFlowSpec spec;
     spec.direction = Direction::FORWARD;
     spec.meet = Meet::UNION;
-    spec.boundary = {};   // no definitions reach the function's entry from outside it
+    spec.boundary = entryDefs;   // only the entry values, if asked for, reach the function's entry
     solve(cfg, spec);
 
     facts.in.resize(n); facts.out.resize(n);

@@ -93,11 +93,35 @@ Operand IRGen::newLabel() {
     return o;
 }
 
-void IRGen::emit(Op op, Operand a1, Operand a2, Operand res, int line) {
+void IRGen::emit(Op op, Operand a1, Operand a2, Operand res, int line, IntTy ty) {
     Quad q;
     q.op = op; q.arg1 = std::move(a1); q.arg2 = std::move(a2); q.result = std::move(res);
     q.srcLine = line;
+    q.ty = ty;
     code_->push_back(std::move(q));
+}
+
+// The IR tag for a C type: the integer type an operation on it wraps to.
+// Pointers, floats and structs have none.
+IntTy IRGen::irTy(const TypeSpec& t) {
+    if (!isIntegerType(t)) return IntTy::NONE;
+    switch (intWidth(t)) {
+        case 8:  return t.isUnsigned ? IntTy::U8  : IntTy::I8;
+        case 16: return t.isUnsigned ? IntTy::U16 : IntTy::I16;
+        case 32: return t.isUnsigned ? IntTy::U32 : IntTy::I32;
+        default: return t.isUnsigned ? IntTy::U64 : IntTy::I64;
+    }
+}
+
+// Converts v from one arithmetic type to another, emitting nothing when the
+// value is already representable as `to`. Pointers are relabelled, not converted.
+Operand IRGen::convertValue(Operand v, const TypeSpec& from, const TypeSpec& to, int line) {
+    if (isPointerLike(from) || to.ptrDepth > 0 || to.base == BaseType::VOID) return v;
+    bool fromFloat = (from.base == BaseType::FLOAT), toFloat = (to.base == BaseType::FLOAT);
+    if (fromFloat == toFloat && (toFloat || sameIntType(from, to))) return v;
+    Operand t = newTemp();
+    emit(toFloat ? Op::TO_FLOAT : Op::TO_INT, v, {}, t, line, toFloat ? IntTy::NONE : irTy(to));
+    return t;
 }
 
 void IRGen::pushScope() { scopes_.emplace_back(); }
@@ -157,7 +181,8 @@ void IRGen::visit(CharLit& n) {
     // Chars are integral for every arithmetic purpose in MiniC (usual
     // arithmetic conversions promote char to int) — represented directly
     // as an INT_CONST, no separate CHAR_CONST kind needed in ir.h.
-    lastValue_ = intConst(static_cast<long long>(static_cast<unsigned char>(n.value)));
+    // char is signed (Apple, and x86 Linux): a byte above 127 is negative.
+    lastValue_ = intConst(static_cast<long long>(static_cast<signed char>(n.value)));
 }
 void IRGen::visit(IdentExpr& n) {
     Operand v = resolveName(n.name, n.line, n.col);
@@ -303,7 +328,7 @@ void IRGen::visit(StringLit& n) {
     for (size_t i = 0; i < n.value.size(); ++i)
         if (n.value[i] != '\0')
             emit(Op::STORE_INDEX, intConst(static_cast<long long>(i)),
-                 intConst(static_cast<unsigned char>(n.value[i])), t, n.line);
+                 intConst(static_cast<signed char>(n.value[i])), t, n.line);
     lastValue_ = t;
 }
 
@@ -358,16 +383,16 @@ void IRGen::visit(UnaryExpr& n) {
             lastValue_ = genExpr(*n.operand);   // kept as a distinct AST node for --dump-ast; no-op in TAC
             return;
         case UnOp::BITNOT: {
-            Operand v = genExpr(*n.operand);
+            Operand v = convertValue(genExpr(*n.operand), n.operand->resolvedType, n.resolvedType, n.line);
             Operand t = newTemp();
-            emit(Op::BITNOT, v, {}, t, n.line);
+            emit(Op::BITNOT, v, {}, t, n.line, irTy(n.resolvedType));
             lastValue_ = t;
             return;
         }
         case UnOp::NEG: {
-            Operand v = genExpr(*n.operand);
+            Operand v = convertValue(genExpr(*n.operand), n.operand->resolvedType, n.resolvedType, n.line);
             Operand t = newTemp();
-            emit(Op::NEG, v, {}, t, n.line);
+            emit(Op::NEG, v, {}, t, n.line, irTy(n.resolvedType));
             lastValue_ = t;
             return;
         }
@@ -410,7 +435,9 @@ void IRGen::visit(UnaryExpr& n) {
             if (lv.isMem) emit(Op::LOAD_INDEX, lv.base, lv.index, oldT, n.line);
             else          emit(Op::COPY, lv.var, {}, oldT, n.line);
             Operand newT = newTemp();
-            emit(deltaOp, oldT, one, newT, n.line);
+            // x++ on a char or short is x = (T)(x + 1): wrapping the add to
+            // x's own type gives exactly that.
+            emit(deltaOp, oldT, one, newT, n.line, irTy(ot));
             if (lv.isMem) emit(Op::STORE_INDEX, lv.index, newT, lv.base, n.line);
             else          emit(Op::COPY, newT, {}, lv.var, n.line);
             lastValue_ = isPre ? newT : oldT;
@@ -458,8 +485,16 @@ void IRGen::visit(BinaryExpr& n) {
         if (lp) r = scaleIndex(r, elem, n.line);
         else    l = scaleIndex(l, elem, n.line);
     }
+    // Sema converted both operands to the operation's type, except a shift's
+    // left operand, which is only promoted, and a comparison, whose result is
+    // int while its operands share their own type.
+    bool isCompare = n.op == BinOp::LT || n.op == BinOp::LE || n.op == BinOp::GT
+                  || n.op == BinOp::GE || n.op == BinOp::EQ || n.op == BinOp::NE;
+    if (n.op == BinOp::SHL || n.op == BinOp::SHR)
+        l = convertValue(l, n.lhs->resolvedType, n.resolvedType, n.line);
+    IntTy ty = (lp || rp) ? IntTy::NONE : irTy(isCompare ? n.lhs->resolvedType : n.resolvedType);
     Operand t = newTemp();
-    emit(toIrOp(n.op), l, r, t, n.line);
+    emit(toIrOp(n.op), l, r, t, n.line, ty);
     lastValue_ = t;
 }
 
@@ -486,10 +521,20 @@ void IRGen::visit(AssignExpr& n) {
         bool valueIsFloat  = (vt.base == BaseType::FLOAT && vt.ptrDepth == 0);
         if (!targetIsFloat && valueIsFloat) {
             Operand narrowed = newTemp();
-            emit(Op::TO_INT, t, {}, narrowed, n.line);
+            emit(Op::TO_INT, t, {}, narrowed, n.line, irTy(tt));
             return narrowed;
         }
+        if (isIntegerType(tt) && isIntegerType(n.opType)) return convertValue(t, n.opType, tt, n.line);
         return t;
+    };
+    // The integer operation of `x op= v` runs at n.opType; both sides are
+    // converted to it first (a no-op unless widths or signedness differ).
+    bool intOp = n.op != AssignOp::ASSIGN && isIntegerType(n.opType) && !isPointerType(n.target->resolvedType);
+    bool isShift = n.op == AssignOp::SHL_ASSIGN || n.op == AssignOp::SHR_ASSIGN;
+    if (intOp && !isShift) v = convertValue(v, n.value->resolvedType, n.opType, n.line);
+    IntTy opTy = intOp ? irTy(n.opType) : IntTy::NONE;
+    auto widenTarget = [&](Operand cur) {
+        return intOp ? convertValue(cur, n.target->resolvedType, n.opType, n.line) : cur;
     };
 
     if (isStructValue(n.target->resolvedType)) {
@@ -510,8 +555,9 @@ void IRGen::visit(AssignExpr& n) {
             emit(Op::COPY, v, {}, lv.var, n.line);
             lastValue_ = v;
         } else {
+            Operand cur = widenTarget(lv.var);
             Operand t = newTemp();
-            emit(assignOpToIr(n.op), lv.var, v, t, n.line);
+            emit(assignOpToIr(n.op), cur, v, t, n.line, opTy);
             t = narrowResultIfNeeded(t);
             emit(Op::COPY, t, {}, lv.var, n.line);
             lastValue_ = t;
@@ -522,8 +568,9 @@ void IRGen::visit(AssignExpr& n) {
     } else {
         Operand oldT = newTemp();
         emit(Op::LOAD_INDEX, lv.base, lv.index, oldT, n.line);
+        Operand cur = widenTarget(oldT);
         Operand t = newTemp();
-        emit(assignOpToIr(n.op), oldT, v, t, n.line);
+        emit(assignOpToIr(n.op), cur, v, t, n.line, opTy);
         t = narrowResultIfNeeded(t);
         emit(Op::STORE_INDEX, lv.index, t, lv.base, n.line);
         lastValue_ = t;
@@ -536,19 +583,16 @@ void IRGen::visit(CastExpr& n) {
     const TypeSpec& to   = n.target;
     // Only a number<->number cast changes the value. Anything touching a
     // pointer (or void) just re-labels the same bits for the type checker.
-    if (isPointerLike(from) || to.ptrDepth > 0 || to.base == BaseType::VOID) { lastValue_ = v; return; }
-    bool fromFloat = (from.base == BaseType::FLOAT), toFloat = (to.base == BaseType::FLOAT);
-    if (fromFloat == toFloat) { lastValue_ = v; return; }
-    Operand t = newTemp();
-    emit(toFloat ? Op::TO_FLOAT : Op::TO_INT, v, {}, t, n.line);
-    lastValue_ = t;
+    lastValue_ = convertValue(v, from, to, n.line);
 }
 
 void IRGen::visit(ConvertExpr& n) {
+    // Sema only builds a ConvertExpr where the types differ, so this always
+    // emits; the int <-> char conversions it adds are what keep a char in range.
     Operand src = genExpr(*n.operand);
     Operand t = newTemp();
-    Op op = (n.targetType.base == BaseType::FLOAT) ? Op::TO_FLOAT : Op::TO_INT;
-    emit(op, src, {}, t, n.line);
+    bool toFloat = (n.targetType.base == BaseType::FLOAT);
+    emit(toFloat ? Op::TO_FLOAT : Op::TO_INT, src, {}, t, n.line, toFloat ? IntTy::NONE : irTy(n.targetType));
     lastValue_ = t;
 }
 
@@ -761,6 +805,22 @@ void IRGen::genCondJumpTrue(Expr& cond, const Operand& trueLabel) {
 // ---- declarations ----------------------------------------------------
 
 void IRGen::genVarDeclInto(VarDecl& n, bool isGlobal) {
+    // A static local is a global the function's scope can see by its short
+    // name: storage under a '#'-free (so global, see Interp::store) name
+    // unique to this function and declaration, initialized once in
+    // globalInit before main rather than every time the block runs.
+    if (!isGlobal && n.isStatic) {
+        std::string q = cur_->name + "." + n.name + "." + std::to_string(n.storageOffset);
+        std::vector<Quad>* saved = code_;
+        code_ = &program_.globalInit;
+        std::string shortName = n.name;
+        n.name = q;
+        genVarDeclInto(n, true);
+        n.name = shortName;
+        code_ = saved;
+        scopes_.back()[shortName] = q;
+        return;
+    }
     std::string slotName = isGlobal ? n.name : qualify(n.name, n.storageOffset);
     Operand slot; slot.kind = OperandKind::VARIABLE; slot.name = slotName;
 

@@ -8,6 +8,13 @@
 
 namespace minic {
 
+// Compile-time evaluation of one operation on constant operands, with the
+// interpreter's exact semantics (src/opt/constant_folding.cpp). False when
+// the operation would trap at run time, or has no constant form; the caller
+// must then leave it to run time. Shared by P1 and SCCP.
+bool foldBinary(Op op, const Operand& a, const Operand& b, IntTy ty, Operand& out);
+bool foldUnary(Op op, const Operand& a, IntTy ty, Operand& out);
+
 // P1. Precondition: none (syntactic) — replaces an operation on two (or
 // one) compile-time constants with its computed constant result.
 std::unique_ptr<Pass> makeConstantFoldingPass();

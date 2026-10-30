@@ -19,6 +19,17 @@
 //      only ran on some iterations (behind an inner if) into a preheader
 //      that always runs would change behavior the first time the loop
 //      runs zero times or takes a path that used to skip it.
+//   4. A global read is invariant only if the loop makes no call, since a
+//      call can write any global.
+//   5. `r` is NOT live on entry to the loop header, and is not a global.
+//      Conditions 2 and 3 do not cover this, and the clang-checked fuzzer
+//      (Cppify roadmap Phase 2) found the miscompile: in
+//          for (j = 0; j < 0; j++) { ...; a = g1; }   printf("%d", a);
+//      `a = g1` was hoisted, so `a` changed although the loop never ran.
+//      If r is live at the header, some path from the header reads r
+//      before the loop's definition does: the value from before the loop.
+//      Hoisting would overwrite it. A global is also read by other
+//      functions, which liveness here cannot see.
 //   (isSafeToRelocate in loop_util.h independently rules out anything
 //   that could trap — DIV/MOD by zero, an out-of-bounds LOAD_INDEX —
 //   since hoisting one of those out from behind the loop's own condition
@@ -58,9 +69,12 @@ public:
     bool run(CFG& cfg) override {
         count_ = 0;
         edits_.clear();
-        std::vector<NaturalLoop> loops = findNaturalLoops(cfg);
+        const std::vector<std::set<int>>& dom = analyses().dominators(cfg);
+        // Computed before any hoisting; hoisting only removes uses from the
+        // loop, so these sets can only be too large, which is the safe side.
+        const DataFlowResult& live = analyses().liveVariables(cfg);
+        std::vector<NaturalLoop> loops = findNaturalLoops(cfg, dom);
         if (loops.empty()) return false;
-        std::vector<std::set<int>> dom = cfg.computeDominators();
 
         for (const NaturalLoop& lp : loops) {
             if (lp.preheader < 0) continue;   // no usable single preheader — leave this loop alone
@@ -68,6 +82,12 @@ public:
             while (changed) {
                 changed = false;
                 std::set<std::string> definedInLoop = namesDefinedIn(cfg, lp.blocks);
+                // A call can write any global, so in a loop with a call no
+                // global is invariant (fuzzing found `d ^ g2` hoisted out of a
+                // loop that called a function incrementing g2).
+                bool loopCalls = false;
+                for (int bi : lp.blocks)
+                    for (const Quad& q : cfg.block(bi).code) if (q.op == Op::CALL) loopCalls = true;
                 for (int bi : lp.blocks) {
                     if (!dom[static_cast<size_t>(lp.tail)].count(bi)) continue;   // doesn't run every iteration
                     BasicBlock& b = cfg.block(bi);
@@ -77,10 +97,14 @@ public:
                         Operand w;
                         if (!writesOf(q, w)) continue;
                         bool invariant = true;
-                        for (const Operand& r : readsOf(q))
-                            if (definedInLoop.count(r.name)) { invariant = false; break; }
+                        for (const Operand& r : readsOf(q)) {
+                            bool global = r.kind == OperandKind::VARIABLE && r.name.find('#') == std::string::npos;
+                            if (definedInLoop.count(r.name) || (global && loopCalls)) { invariant = false; break; }
+                        }
                         if (!invariant) continue;
                         if (countDefs(cfg, lp.blocks, w.name) != 1) continue;
+                        if (live.in[static_cast<size_t>(lp.head)].count(w.name)) continue;
+                        if (w.kind == OperandKind::VARIABLE && w.name.find('#') == std::string::npos) continue;
 
                         Quad hoisted = q;
                         {

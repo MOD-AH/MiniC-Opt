@@ -30,7 +30,7 @@ public:
         // because propagateInBlock invalidates a tracked copy the moment
         // its own source is redefined, so nothing stale ever survives to
         // reach the eligibility check below.
-        count_ = propagateOverCfg(cfg, [](const Quad& def, bool isLocal, Operand& out) {
+        count_ = propagateOverCfg(cfg, analyses().reachingDefs(cfg), [](const Quad& def, bool isLocal, Operand& out) {
             if (!isLocal) return false;
             if (def.op != Op::COPY) return false;
             if (!isNameOperand(def.arg1)) return false;   // a constant source is P2's job, not this pass's

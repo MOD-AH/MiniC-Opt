@@ -41,6 +41,14 @@ struct TypeSpec {
     // what such an array decays to, keeps the same extraDims. (An array of
     // pointers with extra dimensions is not supported.)
     std::vector<int> extraDims;
+    // Integer width and signedness. intBits applies to base INT (short 16,
+    // int 32, long and long long 64); a CHAR is always 8 bits. isUnsigned
+    // applies to both. Pointers, floats and structs ignore them.
+    int      intBits    = 32;
+    bool     isUnsigned = false;
+    // base FLOAT only: `double` (8 bytes) rather than `float` (4). Both are a
+    // C double at run time; this decides sizeof and struct layout.
+    bool     isDouble   = false;
 };
 
 // A pointer here is an array reference plus an offset, so an array and a
@@ -64,6 +72,20 @@ inline TypeSpec pointeeOf(TypeSpec t) {
 }
 inline TypeSpec addressOfType(TypeSpec t) { t.isArray = false; t.arraySize = -1; ++t.ptrDepth; return t; }
 inline bool isStructValue(const TypeSpec& t) { return t.base == BaseType::STRUCT && t.ptrDepth == 0 && !t.isArray; }
+inline bool isIntegerType(const TypeSpec& t) {
+    return !isPointerLike(t) && (t.base == BaseType::INT || t.base == BaseType::CHAR);
+}
+inline int intWidth(const TypeSpec& t) { return t.base == BaseType::CHAR ? 8 : t.intBits; }
+inline TypeSpec intType(int bits, bool uns) {
+    TypeSpec t{BaseType::INT, false, -1};
+    t.intBits = bits; t.isUnsigned = uns;
+    return t;
+}
+// Two integer types are the same C type when width and signedness match;
+// char and an 8-bit int never arise separately, so base need not be compared.
+inline bool sameIntType(const TypeSpec& a, const TypeSpec& b) {
+    return intWidth(a) == intWidth(b) && a.isUnsigned == b.isUnsigned;
+}
 
 // ---- struct layout ---------------------------------------------------------
 //
@@ -122,6 +144,8 @@ struct StructTable {
             case BaseType::CHAR:   return 1;
             case BaseType::STRUCT: return t.structId >= 0 ? structs[t.structId].bytes : 0;
             case BaseType::VOID:   return 1;
+            case BaseType::INT:    return t.intBits / 8;
+            case BaseType::FLOAT:  return t.isDouble ? 8 : 4;
             default:               return 4;
         }
     }
@@ -131,6 +155,8 @@ struct StructTable {
             case BaseType::CHAR:   return 1;
             case BaseType::STRUCT: return t.structId >= 0 ? structs[t.structId].align : 1;
             case BaseType::VOID:   return 1;
+            case BaseType::INT:    return t.intBits / 8;
+            case BaseType::FLOAT:  return t.isDouble ? 8 : 4;
             default:               return 4;
         }
     }
@@ -240,6 +266,9 @@ struct Decl : Node { using Node::Node; };
 
 struct IntLit : Expr {
     long long value;
+    // From a u/U and l/L/ll/LL suffix; Sema picks the literal's C type from them.
+    bool unsignedSuffix = false;
+    bool longSuffix     = false;
     explicit IntLit(long long v) : Expr(NodeKind::IntLit), value(v) {}
     void accept(Visitor& v) override { v.visit(*this); }
 };
@@ -318,6 +347,9 @@ struct AssignExpr : Expr {
     AssignOp op;
     std::unique_ptr<Expr> target;
     std::unique_ptr<Expr> value;
+    // Compound ops only: the type `target op value` is computed in (set by
+    // Sema), before the result converts back to the target's type.
+    TypeSpec opType;
     AssignExpr(AssignOp o, std::unique_ptr<Expr> t, std::unique_ptr<Expr> v)
         : Expr(NodeKind::AssignExpr), op(o), target(std::move(t)), value(std::move(v)) {}
     void accept(Visitor& v) override { v.visit(*this); }
@@ -519,6 +551,9 @@ struct VarDecl : Decl {
     // the variable in a one-slot box so every access goes through memory, which
     // the optimizer never reorders or deletes -- see IRGen::genVarDeclInto.
     bool addressTaken = false;
+    // `static` on a LOCAL: one storage cell for the whole run, initialized
+    // once. IRGen lowers it to a global under a function-qualified name.
+    bool isStatic = false;
     VarDecl(TypeSpec t, std::string n) : Decl(NodeKind::VarDecl), type(t), name(std::move(n)) {}
     void accept(Visitor& v) override { v.visit(*this); }
 };

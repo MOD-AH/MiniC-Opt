@@ -9,6 +9,8 @@
 // frozen layout untouched.
 #include "pass.h"
 #include "opt_passes.h"
+#include "verify.h"
+#include "../ssa/ssa_util.h"
 #include <algorithm>
 
 namespace minic {
@@ -25,17 +27,19 @@ int countInstructions(const CFG& cfg) {
 // can see control flow, matching what --dump-ir shows.
 std::vector<std::string> snapshot(const CFG& cfg) {
     std::vector<std::string> out;
-    for (const auto& b : cfg.blocks())
-        for (const Quad& q : b.code)
-            out.push_back(q.toString());
+    for (const auto& b : cfg.blocks()) {
+        size_t start = bodyStart(b);
+        for (size_t i = 0; i < start; ++i) out.push_back(b.code[i].toString());
+        for (const Phi& phi : b.phis) out.push_back(phiText(phi));   // SSA form only
+        for (size_t i = start; i < b.code.size(); ++i) out.push_back(b.code[i].toString());
+    }
     return out;
 }
 } // namespace
 
-int PassManager::run(CFG& cfg, int sweepCap, TraceRecorder* recorder,
-                     const std::string& functionName) {
+int PassManager::run(CFG& cfg, int sweepCap, TraceRecorder* recorder, int firstSweep) {
     report_.clear();
-    if (recorder) recorder->beginFunction(functionName, snapshot(cfg));
+    AnalysisManager am;
     int sweep = 0;
     bool anyChanged = true;
     // Passes enable one another (constant propagation exposes folding,
@@ -46,12 +50,24 @@ int PassManager::run(CFG& cfg, int sweepCap, TraceRecorder* recorder,
     while (anyChanged && sweep < sweepCap) {
         anyChanged = false;
         ++sweep;
-        if (recorder) recorder->beginSweep(sweep);
+        if (recorder) recorder->beginSweep(firstSweep + sweep - 1);
         for (auto& p : passes_) {
             int before = countInstructions(cfg);
             std::vector<std::string> irBefore;
             if (recorder) irBefore = snapshot(cfg);
+            p->setAnalysisManager(&am);
             bool changed = p->run(cfg);
+            p->setAnalysisManager(nullptr);
+            if (changed) am.invalidate(!p->preservesCFG());
+            if (verify_) {
+                std::vector<std::string> errs = verifyCFG(cfg);
+                if (!errs.empty()) {
+                    std::string msg = "IR verifier failed after pass '" + p->name() + "' in function '" +
+                                      function_ + "':";
+                    for (const auto& e : errs) msg += "\n  " + e;
+                    throw VerifyError{msg};
+                }
+            }
             int after = countInstructions(cfg);
             report_.push_back(PassReport{p->name(), p->transformCount(), before, after});
             if (recorder) {
@@ -75,7 +91,11 @@ int PassManager::run(CFG& cfg, int sweepCap, TraceRecorder* recorder,
             if (changed) anyChanged = true;
         }
     }
-    if (recorder) recorder->endFunction(sweep, !anyChanged, snapshot(cfg));
+    converged_ = !anyChanged;
+    for (const auto& kv : am.counts()) {
+        analysisCounts_[kv.first].computed += kv.second.computed;
+        analysisCounts_[kv.first].reused   += kv.second.reused;
+    }
     return sweep;
 }
 

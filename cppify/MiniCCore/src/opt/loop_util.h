@@ -42,9 +42,14 @@ struct NaturalLoop {
 // reported once per back edge, each sharing the same `blocks` set built
 // from that edge's own tail; naturalLoop's own union-of-preds construction
 // already merges every path back to any tail supplied).
-inline std::vector<NaturalLoop> findNaturalLoops(const CFG& cfg) {
+// `dom` is cfg.computeDominators(), usually served by the AnalysisManager.
+inline std::vector<NaturalLoop> findNaturalLoops(const CFG& cfg, const std::vector<std::set<int>>& dom) {
+    std::vector<std::pair<int, int>> backEdges;
+    for (size_t tail = 0; tail < cfg.blocks().size(); ++tail)
+        for (int head : cfg.block(static_cast<int>(tail)).succs)
+            if (dom[tail].count(head)) backEdges.emplace_back(static_cast<int>(tail), head);
     std::vector<NaturalLoop> loops;
-    for (const auto& edge : cfg.findBackEdges()) {
+    for (const auto& edge : backEdges) {
         NaturalLoop lp;
         lp.tail = edge.first;
         lp.head = edge.second;

@@ -27,7 +27,7 @@ public:
         // No locality restriction: a constant can never be invalidated by
         // another variable's redefinition, so a cross-block reaching
         // definition is just as safe to propagate as a same-block one.
-        count_ = propagateOverCfg(cfg, [](const Quad& def, bool /*isLocal*/, Operand& out) {
+        count_ = propagateOverCfg(cfg, analyses().reachingDefs(cfg), [](const Quad& def, bool /*isLocal*/, Operand& out) {
             if (def.op != Op::COPY) return false;
             if (def.arg1.kind != OperandKind::INT_CONST && def.arg1.kind != OperandKind::FLOAT_CONST) return false;
             out = def.arg1;

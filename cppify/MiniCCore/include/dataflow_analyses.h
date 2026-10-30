@@ -45,7 +45,16 @@ struct ReachingDefFacts {
     std::vector<std::vector<int>> defIdOfQuad;
     std::vector<std::set<int>> in, out;
 };
-ReachingDefFacts computeReachingDefsRaw(CFG& cfg);
+//
+// With `entryDefinitions`, every local (a name containing '#', parameters
+// included) also gets one definition standing for its value on entry,
+// reaching IN[entry]. Without it, `if (c) x = 5; use(x)` shows exactly one
+// definition reaching the use, x = 5, and constant propagation would replace
+// the use although the other path reads x's entry value. The passes always
+// ask for it (AnalysisManager); --dump-dataflow does not, so its listing is
+// unchanged. An entry definition's quad is a NOP, which neither P2 nor P3
+// accepts as a source.
+ReachingDefFacts computeReachingDefsRaw(CFG& cfg, bool entryDefinitions = false);
 
 // Forward, intersection. Fact = one syntactic expression ("a#0 + b#1").
 // Restricted to the classic redundancy-prone case — a binary

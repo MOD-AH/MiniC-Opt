@@ -67,6 +67,7 @@ public:
                "then delete any block no longer reachable from entry";
     }
     std::string requiresAnalysis() const override { return "CFG reachability"; }
+    bool preservesCFG() const override { return false; }
 
     bool run(CFG& cfg) override {
         count_ = 0;

@@ -69,7 +69,7 @@ private:
         for (size_t qi = 0; qi < b.code.size(); ++qi) {
             Quad& q = b.code[qi];
             if (isBinaryExprOp(q.op)) {
-                std::string key = opTag(q.op) + ":" + operandKey(q.arg1) + "," + operandKey(q.arg2);
+                std::string key = opTag(q.op) + std::to_string(static_cast<int>(q.ty)) + ":" + operandKey(q.arg1) + "," + operandKey(q.arg2);
                 auto it = avail.find(key);
                 bool reuse = (it != avail.end());
                 Operand holder = reuse ? it->second.holder : Operand{};

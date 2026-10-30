@@ -108,11 +108,29 @@ TypeSpec Sema::checkExpr(Expr& e) {
     return e.resolvedType;
 }
 
+// Integer promotion (C11 6.3.1.1): anything narrower than int becomes int.
+TypeSpec Sema::promote(TypeSpec t) {
+    if (!isIntegerType(t)) return t;
+    if (intWidth(t) < 32) return intType(32, false);
+    return intType(intWidth(t), t.isUnsigned);
+}
+
+// Usual arithmetic conversions (C11 6.3.1.8), with LP64 widths: after
+// promotion, the wider type wins; at equal width unsigned wins. (The C rule
+// that a signed type wide enough to hold every unsigned value wins reduces
+// to "wider wins" when every width is a power of two.)
 TypeSpec Sema::usualArith(TypeSpec a, TypeSpec b) {
     BaseType ab = (a.base == BaseType::VOID) ? BaseType::INT : a.base;   // recovery: treat as int
     BaseType bb = (b.base == BaseType::VOID) ? BaseType::INT : b.base;
-    if (ab == BaseType::FLOAT || bb == BaseType::FLOAT) return TypeSpec{BaseType::FLOAT, false, -1};
-    return TypeSpec{BaseType::INT, false, -1};   // char promotes to int; int stays int
+    if (ab == BaseType::FLOAT || bb == BaseType::FLOAT) {
+        TypeSpec f{BaseType::FLOAT, false, -1};   // float with double is double
+        f.isDouble = (ab == BaseType::FLOAT && a.isDouble) || (bb == BaseType::FLOAT && b.isDouble);
+        return f;
+    }
+    if (!isIntegerType(a) || !isIntegerType(b)) return TypeSpec{BaseType::INT, false, -1};   // recovery
+    TypeSpec pa = promote(a), pb = promote(b);
+    if (pa.intBits != pb.intBits) return pa.intBits > pb.intBits ? pa : pb;
+    return intType(pa.intBits, pa.isUnsigned || pb.isUnsigned);
 }
 
 void Sema::checkConstantZeroDivisor(const BinaryExpr& n, const char* opSym) {
@@ -197,7 +215,8 @@ bool Sema::assignable(TypeSpec to, TypeSpec from, const Expr* fromExpr) const {
 void Sema::wrapConversionIfNeeded(std::unique_ptr<Expr>& slot, TypeSpec target) {
     if (!slot) return;
     if (isPointerLike(slot->resolvedType) || isPointerLike(target)) return;   // pointers carry no numeric conversion
-    if (slot->resolvedType.base == target.base) return;
+    if (slot->resolvedType.base == target.base
+        && (!isIntegerType(target) || sameIntType(slot->resolvedType, target))) return;
     if (slot->resolvedType.base == BaseType::VOID || target.base == BaseType::VOID) return;
     if (slot->resolvedType.base == BaseType::STRUCT || target.base == BaseType::STRUCT) return;
     auto conv = std::make_unique<ConvertExpr>(std::move(slot), target);
@@ -234,8 +253,20 @@ bool Sema::stmtDefinitelyReturns(const Stmt* s) const {
 
 // ---- expressions --------------------------------------------------------
 
-void Sema::visit(IntLit& n)   { n.resolvedType = TypeSpec{BaseType::INT,   false, -1}; }
-void Sema::visit(FloatLit& n) { n.resolvedType = TypeSpec{BaseType::FLOAT, false, -1}; }
+// C11 6.4.4.1: an unsuffixed decimal literal is the first of int, long that
+// holds it; `u` makes it unsigned and `l` starts the search at long.
+void Sema::visit(IntLit& n) {
+    unsigned long long v = static_cast<unsigned long long>(n.value);
+    bool fitsInt = !n.longSuffix && v <= (n.unsignedSuffix ? 0xFFFFFFFFULL : 0x7FFFFFFFULL);
+    bool uns = n.unsignedSuffix || v > 0x7FFFFFFFFFFFFFFFULL;
+    n.resolvedType = intType(fitsInt ? 32 : 64, uns);
+}
+// An unsuffixed floating constant is a double in C. (The lexer drops an `f`
+// suffix, so 1.5f is a double here too: sizeof(1.5f) is 8, not 4.)
+void Sema::visit(FloatLit& n) {
+    n.resolvedType = TypeSpec{BaseType::FLOAT, false, -1};
+    n.resolvedType.isDouble = true;
+}
 void Sema::visit(CharLit& n)  { n.resolvedType = TypeSpec{BaseType::CHAR,  false, -1}; }
 
 // A string literal is a `char *` to a NUL-terminated array. As the format of
@@ -364,6 +395,8 @@ void Sema::visit(CallExpr& n) {
     if (lib) {
         paramTypes = lib->params;
         retType = lib->ret;
+        // Every floating result in the C library (sqrt, pow, atof, ...) is a double.
+        if (retType.base == BaseType::FLOAT && retType.ptrDepth == 0) retType.isDouble = true;
     } else if (bi) {
         for (auto b : bi->params) paramTypes.push_back(TypeSpec{b, false, -1});
         retType = TypeSpec{bi->ret, false, -1};
@@ -441,14 +474,13 @@ void Sema::visit(UnaryExpr& n) {
             // bit pattern to flip in a float here.
             if (isPointerLike(ot) || ot.base == BaseType::FLOAT || isVoidValue(ot) || isStructValue(ot))
                 sink_.add(n.line, n.col, "operand of '~' must be integral");
-            n.resolvedType = TypeSpec{BaseType::INT, false, -1};
+            n.resolvedType = isIntegerType(ot) ? promote(ot) : TypeSpec{BaseType::INT, false, -1};
             break;
         case UnOp::NEG:
         case UnOp::POS:
             if (isPointerLike(ot) || isVoidValue(ot) || isStructValue(ot))
                 sink_.add(n.line, n.col, std::string("operand of unary '") + toString(n.op) + "' must be numeric");
-            n.resolvedType = (ot.base == BaseType::CHAR && ot.ptrDepth == 0) ? TypeSpec{BaseType::INT, false, -1}
-                                                                              : TypeSpec{ot.base, false, -1};
+            n.resolvedType = isIntegerType(ot) ? promote(ot) : TypeSpec{ot.base, false, -1};
             break;
         case UnOp::PRE_INC: case UnOp::PRE_DEC:
         case UnOp::POST_INC: case UnOp::POST_DEC:
@@ -491,7 +523,7 @@ void Sema::visit(BinaryExpr& n) {
                 else n.resolvedType = lp ? L : R;
                 break;
             case BinOp::SUB:
-                if (lp && rp) { /* pointer difference: an int */ }
+                if (lp && rp) { n.resolvedType = intType(64, false); }   // ptrdiff_t
                 else if (!lp) sink_.add(n.line, n.col, "cannot subtract a pointer from a number");
                 else if (!integral(rt)) sink_.add(n.line, n.col, "pointer arithmetic needs an integer operand");
                 else n.resolvedType = L;
@@ -544,8 +576,18 @@ void Sema::visit(BinaryExpr& n) {
             if (lt.base == BaseType::FLOAT || rt.base == BaseType::FLOAT)
                 sink_.add(n.line, n.col, std::string("operands of '") + toString(n.op)
                                          + "' must be integral");
-            // char promotes to int, as with the arithmetic operators.
-            n.resolvedType = TypeSpec{BaseType::INT, false, -1};
+            // A shift has the promoted type of its LEFT operand and leaves
+            // the count alone; & | ^ use the usual arithmetic conversions.
+            if (n.op == BinOp::SHL || n.op == BinOp::SHR) {
+                n.resolvedType = isIntegerType(lt) ? promote(lt) : TypeSpec{BaseType::INT, false, -1};
+            } else {
+                TypeSpec result = usualArith(lt, rt);
+                if (result.base == BaseType::INT) {
+                    wrapConversionIfNeeded(n.lhs, result);
+                    wrapConversionIfNeeded(n.rhs, result);
+                }
+                n.resolvedType = result;
+            }
             break;
         }
         case BinOp::DIV:
@@ -592,6 +634,9 @@ void Sema::visit(AssignExpr& n) {
                 sink_.add(n.line, n.col, "type mismatch in assignment");
         } else if (isPointerLike(vt) || isStructValue(vt) || !typesCompatible(tt, vt)) {
             sink_.add(n.line, n.col, "type mismatch in assignment");
+        } else {
+            n.opType = (n.op == AssignOp::SHL_ASSIGN || n.op == AssignOp::SHR_ASSIGN)
+                     ? promote(tt) : usualArith(tt, vt);
         }
         // For += -= *= /=, C computes `x = (T)(x op y)`: the usual
         // arithmetic conversion applies to the OPERATION (x's current
@@ -655,7 +700,7 @@ void Sema::visit(MemberExpr& n) {
 }
 
 void Sema::visit(SizeofExpr& n) {
-    n.resolvedType = TypeSpec{BaseType::INT, false, -1};
+    n.resolvedType = intType(64, true);   // size_t: unsigned long on LP64
     if (n.ofType) {
         if (n.type.base == BaseType::STRUCT && n.type.ptrDepth == 0 && structs_
             && !structs_->structs[n.type.structId].complete)

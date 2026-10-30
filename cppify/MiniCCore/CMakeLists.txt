@@ -14,7 +14,13 @@ endif()
 add_executable(minic
   src/main.cpp
   src/lexer/lexer.cpp
+  src/lexer/lexer_re2c.cpp
+  src/lexer/lexing.cpp
+  src/lexer/preprocessor.cpp
   src/parser/parser.cpp
+  src/parser/parse_context.cpp
+  src/parser/parser_bison.cpp
+  src/parser/bison_frontend.cpp
   src/ast/ast.cpp
   src/ast/ast_printer.cpp
   src/sema/sema.cpp
@@ -33,6 +39,17 @@ add_executable(minic
   src/opt/strength_reduction.cpp
   src/opt/licm.cpp
   src/opt/peephole.cpp
+  src/opt/pipeline.cpp
+  src/ir/verify.cpp
+  src/ssa/ssa.cpp
+  src/ssa/sccp.cpp
+  src/ssa/gvn.cpp
+  src/ssa/ssa_dce.cpp
+  src/ssa/licm_ssa.cpp
+  src/trace/trace_json.cpp
+  src/trace/diag_codes.cpp
+  src/astinterp/ast_interp.cpp
+  src/vm/vm.cpp
   src/backend/emit.cpp
 )
 target_include_directories(minic PRIVATE include)
@@ -52,8 +69,15 @@ add_executable(unit_tests
   tests/unit/test_lexer.cpp
   tests/unit/test_symbol_cfg.cpp
   tests/unit/test_dataflow_ir.cpp
+  tests/unit/test_pipeline.cpp
   src/lexer/lexer.cpp
+  src/lexer/lexer_re2c.cpp
+  src/lexer/lexing.cpp
+  src/lexer/preprocessor.cpp
   src/parser/parser.cpp
+  src/parser/parse_context.cpp
+  src/parser/parser_bison.cpp
+  src/parser/bison_frontend.cpp
   src/ast/ast.cpp
   src/ast/ast_printer.cpp
   src/sema/sema.cpp
@@ -72,6 +96,17 @@ add_executable(unit_tests
   src/opt/strength_reduction.cpp
   src/opt/licm.cpp
   src/opt/peephole.cpp
+  src/opt/pipeline.cpp
+  src/ir/verify.cpp
+  src/ssa/ssa.cpp
+  src/ssa/sccp.cpp
+  src/ssa/gvn.cpp
+  src/ssa/ssa_dce.cpp
+  src/ssa/licm_ssa.cpp
+  src/trace/trace_json.cpp
+  src/trace/diag_codes.cpp
+  src/astinterp/ast_interp.cpp
+  src/vm/vm.cpp
   src/backend/emit.cpp
 )
 target_include_directories(unit_tests PRIVATE include tests/unit)

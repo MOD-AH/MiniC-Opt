@@ -66,6 +66,16 @@ public:
     // itself, so it doesn't touch the semantics Step 4 already froze.
     long long instructionsExecuted = 0;
 
+    // ---- shared with the AST reference interpreter (include/ast_interp.h) ----
+    // The C library and the arithmetic primitive. The AST interpreter calls
+    // these so that the two engines can differ only in how they evaluate the
+    // program itself, which is what comparing them is meant to test.
+    // exit(n) throws ProgramExit.
+    struct ProgramExit { long long code; };
+    Value callBuiltin(const std::string& name, std::vector<Value>& args);
+    static Value applyBinary(Op op, const Value& a, const Value& b, IntTy ty = IntTy::NONE);
+    void resetLibrary() { randState_ = 1; }
+
 private:
     struct ExecResult { bool returned; Value value; };
 
@@ -79,8 +89,6 @@ private:
 
     Value evalOperand(const Operand& o, std::unordered_map<std::string, Value>& frame);
     void  store(const Operand& o, const Value& v, std::unordered_map<std::string, Value>& frame);
-    Value applyBinary(Op op, const Value& a, const Value& b);
-    Value callBuiltin(const std::string& name, std::vector<Value>& args);
 };
 
 } // namespace minic

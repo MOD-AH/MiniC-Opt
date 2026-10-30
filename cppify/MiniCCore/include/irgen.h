@@ -131,7 +131,9 @@ private:
     Operand newTemp();
     Operand newLabel();
 
-    void emit(Op op, Operand a1, Operand a2, Operand res, int line);
+    void emit(Op op, Operand a1, Operand a2, Operand res, int line, IntTy ty = IntTy::NONE);
+    static IntTy irTy(const TypeSpec& t);
+    Operand convertValue(Operand v, const TypeSpec& from, const TypeSpec& to, int line);
     void pushScope();
     void popScope();
     std::string declareLocal(const std::string& name, int storageOffset);

@@ -8,6 +8,7 @@
 // this call's own scratch storage. That is the only thing this file relies
 // on to route reads and writes correctly; see evalOperand/store below.
 #include "interp.h"
+#include "int_semantics.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -96,62 +97,40 @@ static Value applyPointerBinary(Op op, const Value& a, const Value& b) {
     throw Interp::RuntimeError{"internal error: invalid operation on a pointer"};
 }
 
-Value Interp::applyBinary(Op op, const Value& a, const Value& b) {
+Value Interp::applyBinary(Op op, const Value& a, const Value& b, IntTy ty) {
     if (a.kind == Value::Kind::ARRAY || b.kind == Value::Kind::ARRAY)
         return applyPointerBinary(op, a, b);
+    if (op == Op::AND) return Value::makeInt((a.truthy() && b.truthy()) ? 1 : 0);
+    if (op == Op::OR)  return Value::makeInt((a.truthy() || b.truthy()) ? 1 : 0);
     bool useFloat = (a.kind == Value::Kind::FLOAT || b.kind == Value::Kind::FLOAT);
-    switch (op) {
-        case Op::ADD: return useFloat ? Value::makeFloat(a.asDouble() + b.asDouble())
-                                       : Value::makeInt(a.ival + b.ival);
-        case Op::SUB: return useFloat ? Value::makeFloat(a.asDouble() - b.asDouble())
-                                       : Value::makeInt(a.ival - b.ival);
-        case Op::MUL: return useFloat ? Value::makeFloat(a.asDouble() * b.asDouble())
-                                       : Value::makeInt(a.ival * b.ival);
-        case Op::DIV:
-            // b.ival==0 only tests the int field; for a float operand the
-            // actual divisor lives in b.fval and could be 0.0 while
-            // b.ival is still its default 0 OR some leftover int value —
-            // checking b.ival here skipped the zero-check entirely
-            // whenever either operand was FLOAT, so e.g. 3.0/0.0 silently
-            // produced inf instead of the RuntimeError this file's own
-            // header (interp.h) documents run() as throwing on "division
-            // ... by zero". Check the value actually being divided by,
-            // not always the int field.
-            if (useFloat) {
-                if (b.asDouble() == 0.0) throw RuntimeError{"division by zero"};
-                return Value::makeFloat(a.asDouble() / b.asDouble());
-            }
-            if (b.ival == 0) throw RuntimeError{"division by zero"};
-            return Value::makeInt(a.ival / b.ival);
-        case Op::MOD:
-            if (b.ival == 0) throw RuntimeError{"modulo by zero"};
-            return Value::makeInt(a.ival % b.ival);   // MOD is integer-only in MiniC's grammar
-        case Op::LT: return Value::makeInt(useFloat ? (a.asDouble() <  b.asDouble()) : (a.ival <  b.ival));
-        case Op::LE: return Value::makeInt(useFloat ? (a.asDouble() <= b.asDouble()) : (a.ival <= b.ival));
-        case Op::GT: return Value::makeInt(useFloat ? (a.asDouble() >  b.asDouble()) : (a.ival >  b.ival));
-        case Op::GE: return Value::makeInt(useFloat ? (a.asDouble() >= b.asDouble()) : (a.ival >= b.ival));
-        case Op::EQ: return Value::makeInt(useFloat ? (a.asDouble() == b.asDouble()) : (a.ival == b.ival));
-        case Op::NE: return Value::makeInt(useFloat ? (a.asDouble() != b.asDouble()) : (a.ival != b.ival));
-        // Bitwise operands are narrowed to integers: a float has no bit
-        // pattern to operate on here, and sema already rejects that case.
-        case Op::BITAND: return Value::makeInt(a.ival & b.ival);
-        case Op::BITOR:  return Value::makeInt(a.ival | b.ival);
-        case Op::BITXOR: return Value::makeInt(a.ival ^ b.ival);
-        case Op::SHL:
-        case Op::SHR:
-            // A negative or >=64 count is undefined in C. It traps here, as
-            // division by zero does, so the unoptimized and optimized runs
-            // agree; the optimizer treats these two ops as may-trap for the
-            // same reason (see isDceEligible / isSafeToRelocate).
-            if (b.ival < 0 || b.ival >= 64) throw RuntimeError{"shift count out of range"};
-            return Value::makeInt(op == Op::SHL
-                ? static_cast<long long>(static_cast<unsigned long long>(a.ival) << b.ival)
-                : (a.ival >> b.ival));
-        case Op::AND: return Value::makeInt((a.truthy() && b.truthy()) ? 1 : 0);
-        case Op::OR:  return Value::makeInt((a.truthy() || b.truthy()) ? 1 : 0);
-        default:
-            throw RuntimeError{"internal error: not a binary opcode"};
+    // Bitwise ops never get here with a float (sema rejects it), so only the
+    // arithmetic and comparison ops have a float form.
+    if (useFloat && op != Op::BITAND && op != Op::BITOR && op != Op::BITXOR
+                 && op != Op::SHL && op != Op::SHR && op != Op::MOD) {
+        double x = a.asDouble(), y = b.asDouble();
+        switch (op) {
+            case Op::ADD: return Value::makeFloat(x + y);
+            case Op::SUB: return Value::makeFloat(x - y);
+            case Op::MUL: return Value::makeFloat(x * y);
+            case Op::DIV:
+                if (y == 0.0) throw RuntimeError{"division by zero"};
+                return Value::makeFloat(x / y);
+            case Op::LT: return Value::makeInt(x <  y);
+            case Op::LE: return Value::makeInt(x <= y);
+            case Op::GT: return Value::makeInt(x >  y);
+            case Op::GE: return Value::makeInt(x >= y);
+            case Op::EQ: return Value::makeInt(x == y);
+            case Op::NE: return Value::makeInt(x != y);
+            default: throw RuntimeError{"internal error: not a binary opcode"};
+        }
     }
+    // Integers: one definition shared with constant folding (int_semantics.h).
+    // A negative or over-wide shift and a zero divisor trap rather than
+    // compute, so the unoptimized and optimized runs agree; the optimizer
+    // treats DIV/MOD/SHL/SHR as may-trap for the same reason.
+    long long out = 0;
+    if (const char* err = intBinary(op, a.ival, b.ival, ty, out)) throw RuntimeError{err};
+    return Value::makeInt(out);
 }
 
 // ---- C library support ---------------------------------------------------
@@ -163,7 +142,6 @@ Value Interp::applyBinary(Op op, const Value& a, const Value& b) {
 
 namespace {
 
-struct ExitRequest { long long code; };
 
 long long asInt(const Value& v) {
     return v.kind == Value::Kind::FLOAT ? static_cast<long long>(v.fval) : v.ival;
@@ -203,7 +181,8 @@ Value* slotAt(const Value& p, long long delta, const char* what) {
 void writeString(const Value& p, const std::string& s, long long limit = -1) {
     long long n = static_cast<long long>(s.size());
     if (limit >= 0 && n + 1 > limit) n = limit > 0 ? limit - 1 : 0;
-    for (long long i = 0; i < n; ++i) *slotAt(p, i, "string write") = Value::makeInt(static_cast<unsigned char>(s[static_cast<size_t>(i)]));
+    // Stored as C's signed char, as the program would see the bytes.
+    for (long long i = 0; i < n; ++i) *slotAt(p, i, "string write") = Value::makeInt(static_cast<signed char>(s[static_cast<size_t>(i)]));
     if (limit != 0) *slotAt(p, n, "string write") = Value::makeInt(0);
 }
 
@@ -366,7 +345,7 @@ int doScan(std::istream& is, const std::string& fmt, const std::vector<Value>& a
             case 'c': {
                 int ch = is.get();
                 if (ch == EOF) { is.clear(); return assigned ? assigned : -1; }
-                putScalar(Value::makeInt(ch));
+                putScalar(Value::makeInt(static_cast<signed char>(ch)));   // into a char
                 break;
             }
             case 's': {
@@ -462,7 +441,7 @@ Value Interp::callBuiltin(const std::string& name, std::vector<Value>& args) {
         std::string s = cstr(arg(1));
         long long n = asInt(arg(2));
         for (long long i = 0; i < n; ++i)
-            *slotAt(arg(0), i, "strncpy") = I(i < static_cast<long long>(s.size()) ? static_cast<unsigned char>(s[static_cast<size_t>(i)]) : 0);
+            *slotAt(arg(0), i, "strncpy") = I(i < static_cast<long long>(s.size()) ? static_cast<signed char>(s[static_cast<size_t>(i)]) : 0);
         return arg(0);
     }
     if (name == "strcat") { std::string d = cstr(arg(0)); writeString(pointerPlus(arg(0), static_cast<long long>(d.size())), cstr(arg(1))); return arg(0); }
@@ -501,7 +480,7 @@ Value Interp::callBuiltin(const std::string& name, std::vector<Value>& args) {
     if (name == "strdup") {
         std::string s = cstr(arg(0));
         auto vec = std::make_shared<std::vector<Value>>(s.size() + 1, I(0));
-        for (size_t i = 0; i < s.size(); ++i) (*vec)[i] = I(static_cast<unsigned char>(s[i]));
+        for (size_t i = 0; i < s.size(); ++i) (*vec)[i] = I(static_cast<signed char>(s[i]));
         return Value::makeArray(vec);
     }
     if (name == "atoi" || name == "atol") return I(std::strtoll(cstr(arg(0)).c_str(), nullptr, 10));
@@ -582,7 +561,7 @@ Value Interp::callBuiltin(const std::string& name, std::vector<Value>& args) {
     }
     if (name == "srand") { randState_ = static_cast<unsigned long long>(asInt(arg(0))); return I(0); }
     if (name == "time" || name == "clock") return I(0);   // a deterministic clock
-    if (name == "exit") throw ExitRequest{asInt(arg(0))};
+    if (name == "exit") throw Interp::ProgramExit{asInt(arg(0))};
     if (name == "assert") { if (!arg(0).truthy()) throw RuntimeError{"assertion failed"}; return I(0); }
 
     auto ctype = [&](int (*fn)(int)) { int ch = static_cast<int>(asInt(arg(0))); return I(ch >= 0 && ch < 256 && fn(ch) ? 1 : 0); };
@@ -667,7 +646,8 @@ Interp::ExecResult Interp::execCode(const std::vector<Quad>& code, std::unordere
             case Op::NEG: {
                 Value v = evalOperand(q.arg1, frame);
                 store(q.result,
-                      v.kind == Value::Kind::FLOAT ? Value::makeFloat(-v.fval) : Value::makeInt(-v.ival),
+                      v.kind == Value::Kind::FLOAT ? Value::makeFloat(-v.fval)
+                          : Value::makeInt(wrapInt(static_cast<long long>(0 - static_cast<unsigned long long>(v.ival)), q.ty)),
                       frame);
                 break;
             }
@@ -678,13 +658,13 @@ Interp::ExecResult Interp::execCode(const std::vector<Quad>& code, std::unordere
             }
             case Op::BITNOT: {
                 Value v = evalOperand(q.arg1, frame);
-                store(q.result, Value::makeInt(~v.ival), frame);
+                store(q.result, Value::makeInt(wrapInt(~v.ival, q.ty)), frame);
                 break;
             }
             case Op::TO_INT: {
                 Value v = evalOperand(q.arg1, frame);
                 store(q.result,
-                      Value::makeInt(v.kind == Value::Kind::FLOAT ? static_cast<long long>(v.fval) : v.ival),
+                      Value::makeInt(wrapInt(v.kind == Value::Kind::FLOAT ? static_cast<long long>(v.fval) : v.ival, q.ty)),
                       frame);
                 break;
             }
@@ -784,7 +764,7 @@ Interp::ExecResult Interp::execCode(const std::vector<Quad>& code, std::unordere
             }
 
             default:   // ADD SUB MUL DIV MOD LT LE GT GE EQ NE AND OR
-                store(q.result, applyBinary(q.op, evalOperand(q.arg1, frame), evalOperand(q.arg2, frame)), frame);
+                store(q.result, applyBinary(q.op, evalOperand(q.arg1, frame), evalOperand(q.arg2, frame), q.ty), frame);
                 break;
         }
         ++pc;
@@ -815,7 +795,7 @@ Value Interp::run(const IRProgram& program, const std::string& entry) {
         if (it == funcsByName_.end()) throw RuntimeError{"no function named '" + entry + "'"};
         ExecResult r = execFunction(*it->second, {});
         return r.returned ? r.value : Value::makeInt(0);
-    } catch (const ExitRequest& e) {
+    } catch (const ProgramExit& e) {
         return Value::makeInt(e.code);       // exit(n) ends the program with status n
     }
 }

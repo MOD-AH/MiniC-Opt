@@ -1,6 +1,7 @@
 // MiniC-Opt — hand-written DFA lexical analyser (implementation)
 // Owner: Member 1 (Front End)
 #include "lexer.h"
+#include <algorithm>
 #include <unordered_map>
 #include <cctype>
 
@@ -116,18 +117,7 @@ static const std::unordered_map<std::string, Tok>& keywords() {
 }
 
 Lexer::Lexer(std::string source, std::string filename)
-    : src_(std::move(source)), file_(std::move(filename)) {
-    // What <stddef.h>, <stdbool.h>, <limits.h> and <stdio.h> would have given.
-    macros_ = {
-        {"NULL", "0"}, {"true", "1"}, {"false", "0"}, {"EOF", "(-1)"},
-        {"INT_MAX", "2147483647"}, {"INT_MIN", "(-2147483647-1)"},
-        {"M_PI", "3.14159265358979323846"}, {"RAND_MAX", "32767"},
-        {"CHAR_BIT", "8"}, {"LONG_MAX", "9223372036854775807"}, {"LLONG_MAX", "9223372036854775807"},
-        {"UINT_MAX", "4294967295"}, {"DBL_MAX", "1.7976931348623157e308"}, {"FLT_MAX", "3.40282346638528859812e+38"},
-        {"stdin", "((void *)0)"}, {"stdout", "((void *)1)"}, {"stderr", "((void *)2)"},
-        {"EXIT_SUCCESS", "0"}, {"EXIT_FAILURE", "1"},
-    };
-}
+    : src_(std::move(source)), file_(std::move(filename)) {}
 
 char Lexer::peek(size_t off) const {
     size_t i = pos_ + off;
@@ -171,15 +161,22 @@ bool Lexer::onlyBlanksBeforeOnThisLine() const {
 void Lexer::skipWhitespaceAndComments() {
     for (;;) {
         char c = peek();
-        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+        if (pp_.skipping() && c != '\0' && c != ' ' && c != '\t' && c != '\r' && c != '\n'
+                && !(c == '#' && onlyBlanksBeforeOnThisLine())) {
+            // Inside a false #if branch: drop the rest of the line unlexed.
+            // Leading blanks are consumed first (the branch below), so an
+            // indented `  #endif` is still seen as a directive.
+            while (peek() != '\n' && peek() != '\0') advance();
+            if (peek() == '\n') advance();
+        } else if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
             advance();
         } else if (c == '/' && peek(1) == '/') {          // line comment
             while (peek() != '\n' && peek() != '\0') advance();
         } else if (c == '#' && onlyBlanksBeforeOnThisLine()) {   // preprocessor line
             // #include is IGNORED, not honoured: there are no headers to
             // find and the built-ins are always in scope. `#define NAME text`
-            // IS honoured (object-like macros only); any other directive is
-            // skipped like a comment so it can't bury real diagnostics.
+            // (object-like), #undef and the conditional directives are
+            // honoured; anything else is skipped like a comment.
             defineMacroFromLine();
         } else if (c == '/' && peek(1) == '*') {          // block comment
             int sl = line_, sc = col_;
@@ -196,8 +193,8 @@ void Lexer::skipWhitespaceAndComments() {
     }
 }
 
-// Consumes one preprocessor line. Records `#define NAME body` (joined across
-// backslash-newlines, comments stripped); everything else is dropped.
+// Consumes one preprocessor line, joining backslash-newlines and replacing
+// comments by a space, and hands it to the shared Preprocessor.
 void Lexer::defineMacroFromLine() {
     int dl = line_, dc = col_;
     std::string text;
@@ -222,32 +219,15 @@ void Lexer::defineMacroFromLine() {
         }
         text += advance();
     }
-    size_t i = 1;                                       // skip '#'
-    while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) ++i;
-    if (text.compare(i, 6, "define") != 0) return;
-    i += 6;
-    while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) ++i;
-    size_t s = i;
-    while (i < text.size() && (std::isalnum(static_cast<unsigned char>(text[i])) || text[i] == '_')) ++i;
-    std::string name = text.substr(s, i - s);
-    if (name.empty()) return;
-    if (i < text.size() && text[i] == '(') {
-        error(dl, dc, "function-like macro '" + name + "' is not supported; use an ordinary function or an object-like #define");
-        return;
-    }
-    while (i < text.size() && (text[i] == ' ' || text[i] == '\t' || text[i] == '\r')) ++i;
-    std::string body = text.substr(i);
-    while (!body.empty() && (body.back() == ' ' || body.back() == '\t' || body.back() == '\r')) body.pop_back();
-    macros_[name] = body;
+    pp_.directive(text, dl, dc, errors_);
 }
 
 // Replaces one use of a macro by the tokens of its body. The body is lexed
 // by a nested lexer that does not know the macro itself, which is what stops
 // `#define X X + 1` from expanding forever.
 void Lexer::expandMacro(const std::string& name, int l, int c, std::vector<Token>& out) {
-    Lexer sub(macros_[name], file_);
-    sub.macros_ = macros_;
-    sub.macros_.erase(name);
+    Lexer sub(pp_.body(name), file_);
+    sub.pp_ = pp_.forExpansionOf(name);
     std::vector<Token> toks = sub.tokenize();
     for (const auto& e : sub.errors_) errors_.push_back({l, c, e.message});
     for (auto& t : toks) {
@@ -282,13 +262,14 @@ Token Lexer::scanNumber() {
         advance(); advance();                     // consume "0x"
         std::string digits;
         while (std::isxdigit(static_cast<unsigned char>(peek()))) digits += advance();
-        while (peek() == 'u' || peek() == 'U' || peek() == 'l' || peek() == 'L') advance();
+        std::string suffix;
+        while (peek() == 'u' || peek() == 'U' || peek() == 'l' || peek() == 'L') suffix += advance();
         if (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_') {
             error(l, c, "malformed numeric literal '0x" + digits + std::string(1, peek()) + "'");
             while (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_') advance();
             return make(Tok::ERROR, "0x" + digits, l, c);
         }
-        return make(Tok::INT_LIT, std::to_string(std::stoll(digits, nullptr, 16)), l, c);
+        return make(Tok::INT_LIT, std::to_string(std::stoull(digits, nullptr, 16)) + suffix, l, c);
     }
 
     while (std::isdigit(static_cast<unsigned char>(peek()))) lex += advance();
@@ -307,14 +288,14 @@ Token Lexer::scanNumber() {
             while (std::isdigit(static_cast<unsigned char>(peek()))) lex += advance();
         }
     }
-    // C type suffixes (3.14f, 10u, 100L, 7ul) say how wide a constant is in
-    // C. Every value here is one of two types already, so the suffix carries
-    // nothing and is consumed rather than turned into a spurious identifier.
-    // It is not added to the lexeme, so later stages never see it.
+    // C type suffixes (3.14f, 10u, 100L, 7ul) say how wide a constant is.
+    // An integer suffix stays on the lexeme so the parser can give the
+    // literal its C type; a float suffix carries nothing (float and double
+    // are one type here) and is dropped.
     if (isFloat) {
         if (peek() == 'f' || peek() == 'F') advance();
     } else {
-        while (peek() == 'u' || peek() == 'U' || peek() == 'l' || peek() == 'L') advance();
+        while (peek() == 'u' || peek() == 'U' || peek() == 'l' || peek() == 'L') lex += advance();
     }
     if (std::isalpha(static_cast<unsigned char>(peek())) || peek() == '_') {
         error(l, c, "malformed numeric literal '" + lex + std::string(1, peek()) + "'");
@@ -337,6 +318,9 @@ Token Lexer::scanStringLiteral() {
         char ch = advance();
         if (ch == '"') { closed = true; break; }
         if (ch == '\\') {
+            // A backslash as the very last byte escapes nothing; reading on
+            // would run past the end of the source (found by lexfuzz.py).
+            if (pos_ >= src_.size()) break;
             char e = advance();
             switch (e) {
                 case 'n':  value += '\n'; break;
@@ -360,7 +344,7 @@ Token Lexer::scanCharLiteral() {
     int l = line_, c = col_;
     std::string lex;
     lex += advance();                       // opening quote
-    if (peek() == '\\') { lex += advance(); lex += advance(); }
+    if (peek() == '\\') { lex += advance(); if (pos_ < src_.size()) lex += advance(); }
     else if (peek() != '\'' && peek() != '\0') { lex += advance(); }
     if (peek() == '\'') { lex += advance(); return make(Tok::CHAR_LIT, lex, l, c); }
     error(l, c, "unterminated character literal");
@@ -432,13 +416,14 @@ std::vector<Token> Lexer::tokenize() {
     for (;;) {
         skipWhitespaceAndComments();
         if (pos_ >= src_.size()) {
+            pp_.finish(errors_);
             out.push_back(make(Tok::END_OF_FILE, "<end of file>", line_, col_));
             return out;
         }
         char c = peek();
         if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
             Token t = scanIdentifierOrKeyword();
-            if (t.type == Tok::IDENT && macros_.count(t.lexeme)) expandMacro(t.lexeme, t.line, t.col, out);
+            if (t.type == Tok::IDENT && pp_.isMacro(t.lexeme)) expandMacro(t.lexeme, t.line, t.col, out);
             else out.push_back(std::move(t));
         }
         else if (std::isdigit(static_cast<unsigned char>(c)) || (c == '.' && std::isdigit(static_cast<unsigned char>(peek(1)))))

@@ -70,6 +70,13 @@ struct Operand {
     bool isNone() const { return kind == OperandKind::NONE; }
 };
 
+// The C integer type an operation computes in, as LLVM writes `add i32`.
+// Arithmetic results are wrapped to it, TO_INT converts to it, and a
+// comparison or DIV/MOD/SHR reads it to choose unsigned semantics. NONE means
+// the interpreter's native 64-bit arithmetic with no wrapping: what pointer
+// arithmetic, float operations and any quad a pass builds from scratch get.
+enum class IntTy : unsigned char { NONE, I8, U8, I16, U16, I32, U32, I64, U64 };
+
 // A quadruple: (op, arg1, arg2, result)
 struct Quad {
     Op      op;
@@ -77,6 +84,7 @@ struct Quad {
     Operand arg2;
     Operand result;
     int     srcLine = 0;      // for diagnostics and before/after listings
+    IntTy   ty = IntTy::NONE;
 
     std::string toString() const;   // src/ir/quad.cpp
 };

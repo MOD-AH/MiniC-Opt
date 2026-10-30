@@ -4,6 +4,7 @@
 // the lexer is hand-written: this fork inherits the original's zero-
 // dependency rule, and the document shape here is small and fully known.
 #include "trace_json.h"
+#include "diag_codes.h"
 
 #include <sstream>
 
@@ -65,6 +66,12 @@ std::string titleFor(const std::string& pass) {
     if (pass == "strength")    return "Strength Reduction";
     if (pass == "licm")        return "Loop-Invariant Code Motion";
     if (pass == "peephole")    return "Peephole Optimization";
+    if (pass == "ssa")         return "SSA Construction";
+    if (pass == "out-of-ssa")  return "SSA Destruction";
+    if (pass == "sccp")        return "Sparse Conditional Constant Propagation";
+    if (pass == "gvn")         return "Global Value Numbering";
+    if (pass == "licm-ssa")    return "Loop-Invariant Code Motion (SSA)";
+    if (pass == "ssa-dce")     return "Mark-Sweep Dead Code Elimination";
     return pass;
 }
 
@@ -113,14 +120,20 @@ void writeFunction(std::ostream& os, const FunctionTrace& f) {
 void writeJsonString(std::ostream& os, const std::string& s) { escape(os, s); }
 
 void writeDiagnostics(std::ostream& os, const std::vector<Diagnostic>& diags,
-                      const std::string& stage) {
+                      const std::string& stage, bool afterEarlierErrors) {
     for (size_t i = 0; i < diags.size(); ++i) {
         if (i) os << ',';
+        DiagInfo info = classifyDiagnostic(stage, diags[i].message);
+        bool primary = !afterEarlierErrors && (stage != "parser" || i == 0);
         os << "{\"stage\":"; escape(os, stage);
         os << ",\"line\":"   << diags[i].line;
         os << ",\"col\":"    << diags[i].col;
         os << ",\"severity\":\"error\",\"message\":";
         escape(os, diags[i].message);
+        os << ",\"code\":"; escape(os, info.code);
+        os << ",\"title\":"; escape(os, info.title);
+        os << ",\"unsupported\":" << (info.unsupported ? "true" : "false");
+        os << ",\"primary\":" << (primary ? "true" : "false");
         os << '}';
     }
 }

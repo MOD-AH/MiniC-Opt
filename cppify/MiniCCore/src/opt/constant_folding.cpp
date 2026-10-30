@@ -7,6 +7,7 @@
 // constant result, e.g. `t1 = 4 * 5` -> `t1 = 20`.
 #include "opt_passes.h"
 #include "ir_utils.h"
+#include "int_semantics.h"
 
 namespace minic {
 namespace {
@@ -16,6 +17,7 @@ Operand mkF(double v)    { Operand o; o.kind = OperandKind::FLOAT_CONST; o.fval 
 bool isConst(const Operand& o) { return o.kind == OperandKind::INT_CONST || o.kind == OperandKind::FLOAT_CONST; }
 double asD(const Operand& o)   { return o.kind == OperandKind::FLOAT_CONST ? o.fval : static_cast<double>(o.ival); }
 bool truthyConst(const Operand& o) { return o.kind == OperandKind::FLOAT_CONST ? (o.fval != 0.0) : (o.ival != 0); }
+}  // namespace
 
 // Mirrors Interp::applyBinary/NEG/NOT/TO_INT/TO_FLOAT exactly (see
 // interp.cpp) — constant folding is a compile-time evaluation of the same
@@ -23,65 +25,60 @@ bool truthyConst(const Operand& o) { return o.kind == OperandKind::FLOAT_CONST ?
 // diverge: a folded program that computed a different answer than the
 // unoptimized one would slip straight past the differential-execution
 // gate this whole pipeline exists to feed.
-bool foldBinary(Op op, const Operand& a, const Operand& b, Operand& out) {
+bool foldBinary(Op op, const Operand& a, const Operand& b, IntTy ty, Operand& out) {
+    if (op == Op::AND) { out = mkI((truthyConst(a) && truthyConst(b)) ? 1 : 0); return true; }
+    if (op == Op::OR)  { out = mkI((truthyConst(a) || truthyConst(b)) ? 1 : 0); return true; }
     bool useFloat = (a.kind == OperandKind::FLOAT_CONST || b.kind == OperandKind::FLOAT_CONST);
-    switch (op) {
-        case Op::ADD: out = useFloat ? mkF(asD(a) + asD(b)) : mkI(a.ival + b.ival); return true;
-        case Op::SUB: out = useFloat ? mkF(asD(a) - asD(b)) : mkI(a.ival - b.ival); return true;
-        case Op::MUL: out = useFloat ? mkF(asD(a) * asD(b)) : mkI(a.ival * b.ival); return true;
-        case Op::DIV:
-            if (useFloat) { out = mkF(asD(a) / asD(b)); return true; }
-            if (b.ival == 0) return false;   // leave division-by-zero to run time, same as unoptimized
-            out = mkI(a.ival / b.ival); return true;
-        case Op::MOD:
-            if (b.ival == 0) return false;
-            out = mkI(a.ival % b.ival); return true;
-        case Op::LT: out = mkI(useFloat ? (asD(a) <  asD(b)) : (a.ival <  b.ival)); return true;
-        case Op::LE: out = mkI(useFloat ? (asD(a) <= asD(b)) : (a.ival <= b.ival)); return true;
-        case Op::GT: out = mkI(useFloat ? (asD(a) >  asD(b)) : (a.ival >  b.ival)); return true;
-        case Op::GE: out = mkI(useFloat ? (asD(a) >= asD(b)) : (a.ival >= b.ival)); return true;
-        case Op::EQ: out = mkI(useFloat ? (asD(a) == asD(b)) : (a.ival == b.ival)); return true;
-        case Op::NE: out = mkI(useFloat ? (asD(a) != asD(b)) : (a.ival != b.ival)); return true;
-        case Op::AND: out = mkI((truthyConst(a) && truthyConst(b)) ? 1 : 0); return true;
-        case Op::OR:  out = mkI((truthyConst(a) || truthyConst(b)) ? 1 : 0); return true;
-        // Bitwise ops are integral-only and must mirror Interp::applyBinary,
-        // which reads .ival directly. A float operand here would mean sema
+    if (useFloat) {
+        // Bitwise ops and % are integral-only; a float here would mean sema
         // let something through, so refuse to fold rather than invent a
         // result the interpreter would not produce.
-        case Op::BITAND: if (useFloat) return false; out = mkI(a.ival & b.ival); return true;
-        case Op::BITOR:  if (useFloat) return false; out = mkI(a.ival | b.ival); return true;
-        case Op::BITXOR: if (useFloat) return false; out = mkI(a.ival ^ b.ival); return true;
-        case Op::SHL:
-            if (useFloat) return false;
-            // A negative or over-wide shift is undefined in C++; leave it to
-            // run time rather than folding to something the interpreter and
-            // the compiler might disagree about.
-            if (b.ival < 0 || b.ival >= 64) return false;
-            out = mkI(static_cast<long long>(static_cast<unsigned long long>(a.ival) << b.ival)); return true;
-        case Op::SHR:
-            if (useFloat) return false;
-            if (b.ival < 0 || b.ival >= 64) return false;
-            out = mkI(a.ival >> b.ival); return true;
+        double x = asD(a), y = asD(b);
+        switch (op) {
+            case Op::ADD: out = mkF(x + y); return true;
+            case Op::SUB: out = mkF(x - y); return true;
+            case Op::MUL: out = mkF(x * y); return true;
+            case Op::DIV:
+                if (y == 0.0) return false;   // the interpreter traps on this; leave it to run time
+                out = mkF(x / y); return true;
+            case Op::LT: out = mkI(x <  y); return true;
+            case Op::LE: out = mkI(x <= y); return true;
+            case Op::GT: out = mkI(x >  y); return true;
+            case Op::GE: out = mkI(x >= y); return true;
+            case Op::EQ: out = mkI(x == y); return true;
+            case Op::NE: out = mkI(x != y); return true;
+            default: return false;
+        }
+    }
+    // Where the run would trap (zero divisor, bad shift) leave the quad for
+    // run time, same as unoptimized.
+    long long v = 0;
+    if (intBinary(op, a.ival, b.ival, ty, v)) return false;
+    out = mkI(v);
+    return true;
+}
+
+bool foldUnary(Op op, const Operand& a, IntTy ty, Operand& out) {
+    bool isF = (a.kind == OperandKind::FLOAT_CONST);
+    switch (op) {
+        case Op::NEG:
+            out = isF ? mkF(-a.fval) : mkI(wrapInt(static_cast<long long>(0 - static_cast<unsigned long long>(a.ival)), ty));
+            return true;
+        case Op::NOT: out = mkI(truthyConst(a) ? 0 : 1); return true;
+        case Op::BITNOT:
+            if (isF) return false;
+            out = mkI(wrapInt(~a.ival, ty)); return true;
+        case Op::TO_INT:
+            out = mkI(wrapInt(isF ? static_cast<long long>(a.fval) : a.ival, ty));
+            return true;
+        case Op::TO_FLOAT:
+            out = mkF(isF ? a.fval : static_cast<double>(a.ival));
+            return true;
         default: return false;
     }
 }
 
-bool foldUnary(Op op, const Operand& a, Operand& out) {
-    switch (op) {
-        case Op::NEG: out = (a.kind == OperandKind::FLOAT_CONST) ? mkF(-a.fval) : mkI(-a.ival); return true;
-        case Op::NOT: out = mkI(truthyConst(a) ? 0 : 1); return true;
-        case Op::BITNOT:
-            if (a.kind == OperandKind::FLOAT_CONST) return false;
-            out = mkI(~a.ival); return true;
-        case Op::TO_INT:
-            out = mkI(a.kind == OperandKind::FLOAT_CONST ? static_cast<long long>(a.fval) : a.ival);
-            return true;
-        case Op::TO_FLOAT:
-            out = mkF(a.kind == OperandKind::FLOAT_CONST ? a.fval : static_cast<double>(a.ival));
-            return true;
-        default: return false;
-    }
-}
+namespace {
 
 class ConstantFolding : public Pass {
 public:
@@ -101,16 +98,17 @@ public:
                 Operand result;
                 bool folded = false;
                 if (isBinaryExprOp(q.op) && isConst(q.arg1) && isConst(q.arg2))
-                    folded = foldBinary(q.op, q.arg1, q.arg2, result);
+                    folded = foldBinary(q.op, q.arg1, q.arg2, q.ty, result);
                 else if ((q.op == Op::NEG || q.op == Op::NOT || q.op == Op::BITNOT
                           || q.op == Op::TO_INT || q.op == Op::TO_FLOAT)
                          && isConst(q.arg1))
-                    folded = foldUnary(q.op, q.arg1, result);
+                    folded = foldUnary(q.op, q.arg1, q.ty, result);
                 if (folded) {
                     std::string beforeTxt = q.toString();
                     q.op = Op::COPY;
                     q.arg1 = result;
                     q.arg2 = Operand{};
+                    q.ty = IntTy::NONE;   // the constant is already in range
                     ++count_;
                     TraceEdit e;
                     e.quadIndex = static_cast<int>(qi);

@@ -16,11 +16,20 @@
 
 namespace minic {
 
+// result = φ(args...), args[i] flowing in from preds[i]. Phis exist only
+// while a function is in SSA form (src/ssa); they sit outside `code` so
+// that no pass written for plain TAC can mistake one for an ordinary quad.
+struct Phi {
+    Operand result;
+    std::vector<Operand> args;
+};
+
 // A maximal straight-line instruction sequence: one entry, one exit.
 // Leaders (Aho et al. 8.4): the first instruction; any jump target;
 // any instruction immediately following a jump.
 struct BasicBlock {
     int               id = -1;
+    std::vector<Phi>  phis;      // empty unless in SSA form
     std::vector<Quad> code;
     std::vector<int>  preds;
     std::vector<int>  succs;
@@ -46,6 +55,14 @@ public:
 
     // Graphviz export — minic --dump-cfg
     std::string toDot() const;
+
+    // Set while the function is in SSA form (src/ssa/ssa.cpp): maps every
+    // SSA name to the variable it is a version of. Uses of an original name
+    // that survive renaming are reads of its value on entry (a parameter, or
+    // an uninitialized local), so in SSA form an original name has no
+    // definitions at all.
+    bool inSSA = false;
+    std::map<std::string, std::string> ssaOrigin;
 
 private:
     std::vector<BasicBlock> blocks_;

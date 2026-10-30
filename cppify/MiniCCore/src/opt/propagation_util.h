@@ -53,6 +53,10 @@
 
 namespace minic {
 
+inline bool isGlobal(const Operand& o) {
+    return o.kind == OperandKind::VARIABLE && o.name.find('#') == std::string::npos;
+}
+
 // eligible(definingQuad, definitionIsLocalToThisBlock, out) -> substitute?
 inline int propagateInBlock(BasicBlock& block, const std::set<int>& blockIn,
                              const std::vector<std::string>& defVar, const std::vector<Quad>& defQuad,
@@ -70,6 +74,9 @@ inline int propagateInBlock(BasicBlock& block, const std::set<int>& blockIn,
     for (size_t qi = 0; qi < block.code.size(); ++qi) {
         Quad& q = block.code[qi];
         for (Operand* slot : readSlotsOf(q)) {
+            // A global's value can change in any call, which reaching
+            // definitions does not model, so a use of one is never replaced.
+            if (isGlobal(*slot)) continue;
             auto it = current.find(slot->name);
             if (it == current.end() || it->second.size() != 1) continue;   // no def, or ambiguous (merge point)
             int defId = *it->second.begin();
@@ -91,6 +98,18 @@ inline int propagateInBlock(BasicBlock& block, const std::set<int>& blockIn,
                                          : std::string();
                     sink->push_back(std::move(e));
                 }
+            }
+        }
+        // A call may write any global, so a copy fact whose source is a
+        // global is stale after it (`c = g; bump(); use c` must not read g).
+        if (q.op == Op::CALL) {
+            for (auto it = current.begin(); it != current.end(); ) {
+                bool stale = false;
+                for (int id : it->second) {
+                    const Quad& dq = defQuad[static_cast<size_t>(id)];
+                    if (dq.op == Op::COPY && isGlobal(dq.arg1)) { stale = true; break; }
+                }
+                if (stale) it = current.erase(it); else ++it;
             }
         }
         int myDefId = defIdOfQuadInBlock[qi];
@@ -115,16 +134,16 @@ inline int propagateInBlock(BasicBlock& block, const std::set<int>& blockIn,
     return changes;
 }
 
-// Runs propagateInBlock over every block of `cfg`, using a freshly
-// recomputed reaching-definitions analysis (the CFG may have changed
-// since the last sweep — see PassManager::run) — this is the piece both
+// Runs propagateInBlock over every block of `cfg`. `facts` must describe
+// the CFG as it is now; the passes get them from the AnalysisManager, which
+// drops them whenever a pass changes the IR — this is the piece both
 // ConstantPropagation::run and CopyPropagation::run share verbatim.
-inline int propagateOverCfg(CFG& cfg, const std::function<bool(const Quad&, bool, Operand&)>& eligible,
+inline int propagateOverCfg(CFG& cfg, const ReachingDefFacts& facts,
+                            const std::function<bool(const Quad&, bool, Operand&)>& eligible,
                             std::vector<TraceEdit>* sink = nullptr,
                             const char* kind = "",
                             const std::function<std::string(const Quad&, const std::string&)>&
                                 reasonFor = nullptr) {
-    ReachingDefFacts facts = computeReachingDefsRaw(cfg);
     int total = 0;
     for (size_t bi = 0; bi < cfg.blocks().size(); ++bi) {
         total += propagateInBlock(cfg.block(static_cast<int>(bi)), facts.in[bi],

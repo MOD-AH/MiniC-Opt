@@ -55,14 +55,7 @@ static char decodeCharLiteral(const std::string& lex) {
 // ---- construction & token-stream helpers --------------------------------
 
 Parser::Parser(std::vector<Token> tokens, std::string filename)
-    : toks_(std::move(tokens)), file_(std::move(filename)) {
-    // The names <stdbool.h>, <stddef.h> and <stdint.h> would have supplied.
-    // Every one of them is an integer here.
-    for (const char* n : {"bool", "size_t", "ssize_t", "int8_t", "int16_t", "int32_t", "int64_t",
-                          "uint8_t", "uint16_t", "uint32_t", "uint64_t", "intptr_t", "uintptr_t",
-                          "ptrdiff_t", "time_t", "clock_t", "FILE"})
-        typedefs_[n] = TypeSpec{};
-}
+    : toks_(std::move(tokens)), file_(std::move(filename)) {}
 
 const Token& Parser::peek(size_t off) const {
     size_t idx = pos_ + off;
@@ -131,53 +124,53 @@ bool Parser::atTypeSpecStart() const {
         case Tok::KW_STRUCT: case Tok::KW_ENUM:
             return true;
         case Tok::IDENT:
-            return typedefs_.count(peek().lexeme) > 0;
+            return ctx_.typedefs.count(peek().lexeme) > 0;
         default:
             return false;
     }
 }
 
 TypeSpec Parser::parseTypeSpec() {
-    // MiniC has exactly four types. Ordinary C spells many declarations with
-    // qualifiers and width modifiers that carry no meaning here, so rather
-    // than reject the whole declaration they are consumed and folded:
+    // Qualifiers that carry no meaning here are consumed and ignored:
     //   const/static/extern  -> ignored
-    //   long/short/unsigned/signed -> int   (the interpreter's int is 64-bit)
-    //   double -> float                     (the interpreter's float is double)
-    // This is a deliberate widening of what parses, not of what the language
-    // can express: the resulting program behaves exactly as the folded type.
-    TypeSpec t;
-    bool sawAny = false;
+    //   double -> float      (the interpreter's float is double)
+    // Integer width and signedness are real: short/int/long and unsigned set
+    // TypeSpec::intBits / isUnsigned, and arithmetic wraps accordingly.
+    // Width and signedness words combine in any order: `unsigned long int`,
+    // `long unsigned`, `short`. They are tallied, then applied after the loop.
+    ParseContext::TypeWords w;
+    sawStatic_ = false;
 
     for (;;) {
         switch (peek().type) {
-            case Tok::KW_CONST: case Tok::KW_STATIC: case Tok::KW_EXTERN:
+            case Tok::KW_STATIC: sawStatic_ = true; advance(); continue;
+            case Tok::KW_CONST: case Tok::KW_EXTERN:
                 advance();
                 continue;
-            case Tok::KW_UNSIGNED: case Tok::KW_SIGNED:
-            case Tok::KW_LONG:     case Tok::KW_SHORT:
-                t.base = BaseType::INT; sawAny = true; advance();
-                continue;             // `unsigned long int` collapses to int
-            case Tok::KW_INT:   t.base = BaseType::INT;   sawAny = true; advance(); continue;
-            case Tok::KW_CHAR:  t.base = BaseType::CHAR;  sawAny = true; advance(); break;
-            case Tok::KW_FLOAT: t.base = BaseType::FLOAT; sawAny = true; advance(); break;
-            case Tok::KW_DOUBLE:t.base = BaseType::FLOAT; sawAny = true; advance(); break;
-            case Tok::KW_VOID:  t.base = BaseType::VOID;  sawAny = true; advance(); break;
-            case Tok::KW_STRUCT: advance(); t = parseStructSpecifier(); sawAny = true; break;
-            case Tok::KW_ENUM:   advance(); parseEnumSpecifier(); t = TypeSpec{}; sawAny = true; break;
+            case Tok::KW_UNSIGNED: w.sawUnsigned = true; w.sawIntWord = true; w.t.base = BaseType::INT; w.sawAny = true; advance(); continue;
+            case Tok::KW_SIGNED:   w.sawIntWord = true; w.t.base = BaseType::INT; w.sawAny = true; advance(); continue;
+            case Tok::KW_LONG:     w.sawLong = true;  w.sawIntWord = true; w.t.base = BaseType::INT; w.sawAny = true; advance(); continue;
+            case Tok::KW_SHORT:    w.sawShort = true; w.sawIntWord = true; w.t.base = BaseType::INT; w.sawAny = true; advance(); continue;
+            case Tok::KW_INT:   w.t.base = BaseType::INT;   w.sawAny = true; w.sawIntWord = true; advance(); continue;
+            case Tok::KW_CHAR:  w.t.base = BaseType::CHAR;  w.sawAny = true; advance(); break;
+            case Tok::KW_FLOAT: w.t.base = BaseType::FLOAT; w.sawAny = true; advance(); break;
+            case Tok::KW_DOUBLE:w.t.base = BaseType::FLOAT; w.t.isDouble = true; w.sawAny = true; advance(); break;
+            case Tok::KW_VOID:  w.t.base = BaseType::VOID;  w.sawAny = true; advance(); break;
+            case Tok::KW_STRUCT: advance(); w.t = parseStructSpecifier(); w.sawAny = true; break;
+            case Tok::KW_ENUM:   advance(); parseEnumSpecifier(); w.t = TypeSpec{}; w.sawAny = true; break;
             case Tok::IDENT:
                 // A typedef name is a type only where a type is expected; the
                 // `!sawAny` guard keeps `unsigned x` from treating x as one.
-                if (!sawAny && typedefs_.count(peek().lexeme)) {
-                    t = typedefs_[peek().lexeme]; sawAny = true; advance();
+                if (!w.sawAny && ctx_.typedefs.count(peek().lexeme)) {
+                    w.t = ctx_.typedefs[peek().lexeme]; w.sawAny = true; advance();
                 }
                 break;
             default: break;
         }
         break;
     }
-    if (!sawAny) errorHere("expected a type (int, char, float, void, struct or a typedef name)");
-    return t;
+    if (!w.sawAny) errorHere("expected a type (int, char, float, void, struct or a typedef name)");
+    return ctx_.finishType(w);
 }
 
 // struct [Name] [ { fields } ]. A bare `struct Name` is a reference (it may
@@ -188,52 +181,32 @@ TypeSpec Parser::parseStructSpecifier() {
     std::string name;
     const Token& at = peek();
     if (check(Tok::IDENT)) name = advance().lexeme;
-    int id = name.empty() ? -1 : structs_.find(name);
+    int id;
     if (check(Tok::LBRACE)) {
-        if (id >= 0 && structs_.structs[id].complete)
-            sink_.add(at.line, at.col, "redefinition of 'struct " + name + "'");
-        if (id < 0) id = structs_.declare(name);
-        advance();   // '{'
-        std::vector<FieldInfo> fields;
-        int slotOff = 0, byteOff = 0, maxAlign = 1;
-        while (!check(Tok::RBRACE) && !isAtEnd()) {
-            TypeSpec ft = parseTypeSpec();
-            do {
-                int stars = parseStars();
-                const Token& fn = expect(Tok::IDENT, "a field name");
-                TypeSpec fty = ft;
-                fty.ptrDepth += stars;
-                parseArrayDims(fty, false);
-                if (fty.base == BaseType::STRUCT && fty.ptrDepth == 0
-                    && !structs_.structs[fty.structId].complete)
-                    sink_.add(fn.line, fn.col, "field '" + fn.lexeme + "' has incomplete type 'struct "
-                              + structs_.structs[fty.structId].name + "'");
-                if (fty.base == BaseType::VOID && fty.ptrDepth == 0)
-                    sink_.add(fn.line, fn.col, "field '" + fn.lexeme + "' declared void");
-                int al = structs_.elemAlign(fty);
-                byteOff = (byteOff + al - 1) / al * al;
-                FieldInfo f;
-                f.name = fn.lexeme; f.type = fty; f.slotOffset = slotOff; f.byteOffset = byteOff;
-                for (const auto& other : fields)
-                    if (other.name == f.name)
-                        sink_.add(fn.line, fn.col, "duplicate field '" + f.name + "'");
-                fields.push_back(f);
-                slotOff += structs_.slotsOf(fty);
-                byteOff += structs_.bytesOf(fty);
-                if (al > maxAlign) maxAlign = al;
-            } while (match(Tok::COMMA));
-            expect(Tok::SEMI, "';'");
+        id = ctx_.beginStruct(name, at.line, at.col);
+        try {
+            advance();   // '{'
+            while (!check(Tok::RBRACE) && !isAtEnd()) {
+                TypeSpec ft = parseTypeSpec();
+                do {
+                    int stars = parseStars();
+                    const Token& fn = expect(Tok::IDENT, "a field name");
+                    TypeSpec fty = ft;
+                    fty.ptrDepth += stars;
+                    parseArrayDims(fty, false);
+                    ctx_.addField(fty, fn);
+                } while (match(Tok::COMMA));
+                expect(Tok::SEMI, "';'");
+            }
+            expect(Tok::RBRACE, "'}'");
+        } catch (const ParseError&) {
+            ctx_.abandonStruct();
+            throw;
         }
-        expect(Tok::RBRACE, "'}'");
-        StructInfo& si = structs_.structs[id];
-        si.fields = std::move(fields);
-        si.slots  = slotOff;
-        si.align  = maxAlign;
-        si.bytes  = (byteOff + maxAlign - 1) / maxAlign * maxAlign;
-        si.complete = true;
+        ctx_.finishStruct();
     } else {
         if (name.empty()) errorHere("expected a struct name or '{' after 'struct'");
-        if (id < 0) id = structs_.declare(name);
+        id = ctx_.structReference(name, at.line, at.col);
     }
     TypeSpec t;
     t.base = BaseType::STRUCT;
@@ -246,11 +219,12 @@ TypeSpec Parser::parseStructSpecifier() {
 void Parser::parseEnumSpecifier() {
     if (check(Tok::IDENT)) advance();
     if (!match(Tok::LBRACE)) return;
-    long long next = 0;
+    ctx_.resetEnum();
     while (!check(Tok::RBRACE) && !isAtEnd()) {
         const Token& nm = expect(Tok::IDENT, "an enumerator name");
-        if (match(Tok::OP_ASSIGN)) next = parseConstInt("an enumerator value");
-        enumConsts_[nm.lexeme] = next++;
+        bool hasValue = match(Tok::OP_ASSIGN);
+        long long v = hasValue ? parseConstInt("an enumerator value") : 0;
+        ctx_.addEnumerator(nm.lexeme, hasValue, v);
         if (!match(Tok::COMMA)) break;
     }
     expect(Tok::RBRACE, "'}'");
@@ -267,97 +241,29 @@ void Parser::parseTypedef() {
         TypeSpec t = base;
         t.ptrDepth += stars;
         parseArrayDims(t, false);
-        typedefs_[nm.lexeme] = t;
+        ctx_.typedefs[nm.lexeme] = t;
     } while (match(Tok::COMMA));
     expect(Tok::SEMI, "';'");
-}
-
-// Folds an expression made only of literals and operators. Array sizes, case
-// labels and enumerator values must be known when the program is compiled.
-bool Parser::evalConst(const Expr& e, long long& out) const {
-    switch (e.kind) {
-        case NodeKind::IntLit:  out = static_cast<const IntLit&>(e).value; return true;
-        case NodeKind::CharLit: out = static_cast<unsigned char>(static_cast<const CharLit&>(e).value); return true;
-        case NodeKind::SizeofExpr: {
-            const auto& s = static_cast<const SizeofExpr&>(e);
-            if (!s.ofType) return false;
-            out = s.value; return true;
-        }
-        case NodeKind::CastExpr: return evalConst(*static_cast<const CastExpr&>(e).operand, out);
-        case NodeKind::UnaryExpr: {
-            const auto& u = static_cast<const UnaryExpr&>(e);
-            long long v;
-            if (!evalConst(*u.operand, v)) return false;
-            switch (u.op) {
-                case UnOp::NEG: out = -v; return true;
-                case UnOp::POS: out = v;  return true;
-                case UnOp::NOT: out = !v; return true;
-                case UnOp::BITNOT: out = ~v; return true;
-                default: return false;
-            }
-        }
-        case NodeKind::CondExpr: {
-            const auto& q = static_cast<const CondExpr&>(e);
-            long long c, a, b;
-            if (!evalConst(*q.cond, c) || !evalConst(*q.thenExpr, a) || !evalConst(*q.elseExpr, b)) return false;
-            out = c ? a : b; return true;
-        }
-        case NodeKind::BinaryExpr: {
-            const auto& b = static_cast<const BinaryExpr&>(e);
-            long long l, r;
-            if (!evalConst(*b.lhs, l) || !evalConst(*b.rhs, r)) return false;
-            switch (b.op) {
-                case BinOp::ADD: out = l + r; return true;
-                case BinOp::SUB: out = l - r; return true;
-                case BinOp::MUL: out = l * r; return true;
-                case BinOp::DIV: if (r == 0) return false; out = l / r; return true;
-                case BinOp::MOD: if (r == 0) return false; out = l % r; return true;
-                case BinOp::LT: out = l <  r; return true;
-                case BinOp::LE: out = l <= r; return true;
-                case BinOp::GT: out = l >  r; return true;
-                case BinOp::GE: out = l >= r; return true;
-                case BinOp::EQ: out = l == r; return true;
-                case BinOp::NE: out = l != r; return true;
-                case BinOp::LOGAND: out = l && r; return true;
-                case BinOp::LOGOR:  out = l || r; return true;
-                case BinOp::BITAND: out = l & r; return true;
-                case BinOp::BITOR:  out = l | r; return true;
-                case BinOp::BITXOR: out = l ^ r; return true;
-                case BinOp::SHL: if (r < 0 || r >= 63) return false; out = l << r; return true;
-                case BinOp::SHR: if (r < 0 || r >= 63) return false; out = l >> r; return true;
-            }
-            return false;
-        }
-        default: return false;
-    }
 }
 
 long long Parser::parseConstInt(const char* what) {
     const Token& at = peek();
     auto e = parseTernary();
-    long long v = 0;
-    if (!evalConst(*e, v)) {
-        sink_.add(at.line, at.col, std::string(what) + " must be a constant integer expression");
-        return 1;
-    }
-    return v;
+    return ctx_.constInt(*e, at.line, at.col, what);
 }
 
 void Parser::parseArrayDims(TypeSpec& t, bool allowEmptyFirst) {
     bool first = true;
     while (check(Tok::LBRACKET)) {
         const Token& lb = advance();
-        long long n = -1;
-        if (check(Tok::RBRACKET)) {
-            if (!(first && allowEmptyFirst))
-                sink_.add(lb.line, lb.col, "only the first array dimension may be left empty");
-        } else {
-            n = parseConstInt("an array size");
-            if (n <= 0) { sink_.add(lb.line, lb.col, "array size must be positive"); n = 1; }
+        ParseContext::Dim d;
+        d.line = lb.line; d.col = lb.col;
+        if (!check(Tok::RBRACKET)) {
+            d.exprLine = peek().line; d.exprCol = peek().col;
+            d.size = parseTernary();
         }
+        ctx_.applyDim(t, d, first, allowEmptyFirst);
         expect(Tok::RBRACKET, "']'");
-        if (first) { t.isArray = true; t.arraySize = static_cast<int>(n); }
-        else        t.extraDims.push_back(static_cast<int>(n));
         first = false;
     }
 }
@@ -385,85 +291,6 @@ Parser::InitNode Parser::parseInitNode() {
     return n;
 }
 
-void Parser::zeroFill(const TypeSpec& t, std::vector<std::unique_ptr<Expr>>& out, int line, int col) {
-    if (t.isArray) {
-        TypeSpec e = pointeeOf(t);
-        int n = t.arraySize < 0 ? 1 : t.arraySize;
-        for (int i = 0; i < n; ++i) zeroFill(e, out, line, col);
-    } else if (isStructValue(t)) {
-        for (const auto& f : structs_.structs[t.structId].fields) zeroFill(f.type, out, line, col);
-    } else {
-        std::unique_ptr<Expr> z;
-        if (t.base == BaseType::FLOAT && t.ptrDepth == 0) z = std::make_unique<FloatLit>(0.0);
-        else                                               z = std::make_unique<IntLit>(0);
-        z->line = line; z->col = col;
-        out.push_back(std::move(z));
-    }
-}
-
-void Parser::flattenOne(const TypeSpec& t, std::vector<InitNode>& kids, size_t& cur,
-                        std::vector<std::unique_ptr<Expr>>& out, int line, int col) {
-    bool agg = t.isArray || isStructValue(t);
-    if (cur >= kids.size()) { zeroFill(t, out, line, col); return; }
-    InitNode& k = kids[cur];
-    if (!agg) {
-        ++cur;
-        if (k.isList) {                       // `{5}` where a scalar is expected
-            if (k.kids.empty() || k.kids[0].isList) { zeroFill(t, out, k.line, k.col); }
-            else out.push_back(std::move(k.kids[0].expr));
-        } else {
-            out.push_back(std::move(k.expr));
-        }
-        return;
-    }
-    if (k.isList) {
-        ++cur;
-        size_t c2 = 0;
-        flattenAgg(t, k.kids, c2, out, k.line, k.col);
-        if (c2 < k.kids.size()) sink_.add(k.line, k.col, "excess elements in initializer");
-        return;
-    }
-    // A string literal fills a char array.
-    if (t.isArray && t.base == BaseType::CHAR && t.ptrDepth == 0 && t.extraDims.empty()
-        && k.expr && k.expr->kind == NodeKind::StringLit) {
-        const std::string& s = static_cast<StringLit&>(*k.expr).value;
-        int n = t.arraySize < 0 ? static_cast<int>(s.size()) + 1 : t.arraySize;
-        for (int i = 0; i < n; ++i) {
-            auto ch = std::make_unique<CharLit>(i < static_cast<int>(s.size()) ? s[i] : '\0');
-            ch->line = k.line; ch->col = k.col;
-            out.push_back(std::move(ch));
-        }
-        ++cur;
-        return;
-    }
-    if (isStructValue(t)) {
-        sink_.add(k.line, k.col, "a struct inside an initializer must be written with braces");
-        ++cur;
-        zeroFill(t, out, k.line, k.col);
-        return;
-    }
-    // Braces elided: `int m[2][2] = {1, 2, 3, 4}` -- keep consuming scalars.
-    flattenAgg(t, kids, cur, out, line, col);
-}
-
-void Parser::flattenAgg(const TypeSpec& t, std::vector<InitNode>& kids, size_t& cur,
-                        std::vector<std::unique_ptr<Expr>>& out, int line, int col) {
-    if (t.isArray) {
-        TypeSpec e = pointeeOf(t);
-        int n = t.arraySize < 0 ? 1 : t.arraySize;
-        for (int i = 0; i < n; ++i) flattenOne(e, kids, cur, out, line, col);
-    } else {
-        for (const auto& f : structs_.structs[t.structId].fields)
-            flattenOne(f.type, kids, cur, out, line, col);
-    }
-}
-
-void Parser::flattenInit(const TypeSpec& t, InitNode& init, std::vector<std::unique_ptr<Expr>>& out) {
-    size_t cur = 0;
-    flattenAgg(t, init.kids, cur, out, init.line, init.col);
-    if (cur < init.kids.size()) sink_.add(init.line, init.col, "excess elements in initializer");
-}
-
 int Parser::parseStars() {
     int n = 0;
     while (match(Tok::OP_STAR)) {
@@ -480,7 +307,7 @@ bool Parser::startsTypeName(size_t off) const {
         case Tok::KW_DOUBLE: case Tok::KW_CONST: case Tok::KW_STRUCT: case Tok::KW_ENUM:
             return true;
         case Tok::IDENT:
-            return typedefs_.count(peek(off).lexeme) > 0;
+            return ctx_.typedefs.count(peek(off).lexeme) > 0;
         default:
             return false;
     }
@@ -495,7 +322,7 @@ std::unique_ptr<Program> Parser::parseProgram() {
             synchronize();
         }
     }
-    prog->structs = std::move(structs_);
+    prog->structs = std::move(ctx_.structs);
     return prog;
 }
 
@@ -542,84 +369,23 @@ void Parser::parseTopLevelDeclaration(std::vector<std::unique_ptr<Decl>>& out) {
 }
 
 std::unique_ptr<VarDecl> Parser::parseOneDeclarator(TypeSpec type, const Token& nameTok) {
-    auto decl = std::make_unique<VarDecl>(type, nameTok.lexeme);
-    decl->line = nameTok.line;
-    decl->col  = nameTok.col;
-
     // `int a[] = {...}` leaves the first length empty (-1) until the
-    // initializer is known.
-    parseArrayDims(decl->type, true);
-
-    // An array of structs, or any multi-dimensional array, is initialised
-    // through the flattening path; a plain 1-D array of scalars keeps the
-    // simple one (a short list is zero-padded later, by IRGen).
-    bool aggregate = isStructValue(decl->type)
-        || (decl->type.isArray && (!decl->type.extraDims.empty()
-                                   || (decl->type.base == BaseType::STRUCT && decl->type.ptrDepth == 0)));
-
+    // initializer is known (ParseContext::declarator).
+    parseArrayDims(type, true);
+    ParseContext::Initializer init;
     if (match(Tok::OP_ASSIGN)) {
         if (check(Tok::LBRACE)) {
-            InitNode root = parseInitNode();
-            if (aggregate) {
-                if (decl->type.isArray && decl->type.arraySize < 0) {
-                    // Length from the number of top-level elements (rounded up
-                    // when the braces were elided).
-                    TypeSpec e = pointeeOf(decl->type);
-                    size_t perElem = 1;
-                    bool allLists = !root.kids.empty();
-                    for (auto& k : root.kids) if (!k.isList) allLists = false;
-                    if (!allLists) perElem = static_cast<size_t>(std::max(1, structs_.slotsOf(e)));
-                    decl->type.arraySize = static_cast<int>(
-                        allLists ? root.kids.size() : (root.kids.size() + perElem - 1) / perElem);
-                    if (decl->type.arraySize <= 0) decl->type.arraySize = 1;
-                }
-                flattenInit(decl->type, root, decl->initList);
-            } else {
-                for (auto& k : root.kids) {
-                    if (k.isList) {
-                        sink_.add(k.line, k.col, "unexpected '{' in the initializer of a scalar or one-dimensional array");
-                        continue;
-                    }
-                    decl->initList.push_back(std::move(k.expr));
-                }
-            }
-        } else if (decl->type.isArray && check(Tok::STRING_LIT)) {
-            // `char s[] = "abc";` is shorthand for { 'a', 'b', 'c', 0 }. It is
-            // expanded here into exactly that list, so sema, IRGen and the
-            // optimizer see an ordinary array initializer and need no notion
-            // of a string at all.
-            const Token& str = advance();
-            for (char ch : str.lexeme) {
-                auto cl = std::make_unique<CharLit>(ch);
-                cl->line = str.line; cl->col = str.col;
-                decl->initList.push_back(std::move(cl));
-            }
-            // C drops the terminator when the literal exactly fills the array.
-            bool exactFit = decl->type.arraySize >= 0
-                         && static_cast<int>(str.lexeme.size()) == decl->type.arraySize;
-            if (!exactFit) {
-                auto nul = std::make_unique<CharLit>('\0');
-                nul->line = str.line; nul->col = str.col;
-                decl->initList.push_back(std::move(nul));
-            }
+            init.kind = ParseContext::Initializer::LIST;
+            init.list = parseInitNode();
+        } else if (type.isArray && check(Tok::STRING_LIT)) {
+            init.kind = ParseContext::Initializer::STRING;
+            init.str = advance();
         } else {
-            decl->init = parseInitExpr();
+            init.kind = ParseContext::Initializer::EXPR;
+            init.expr = parseInitExpr();
         }
     }
-
-    // Resolve an inferred length. Without an initializer there is nothing to
-    // infer it from; that is reported here, with the array's own position,
-    // rather than left to surface later as a confusing zero-sized allocation.
-    if (decl->type.isArray && decl->type.arraySize < 0) {
-        if (!decl->initList.empty()) {
-            decl->type.arraySize = static_cast<int>(decl->initList.size());
-        } else {
-            sink_.add(nameTok.line, nameTok.col,
-                      "array '" + nameTok.lexeme + "' has no size and no initializer to infer one from");
-            decl->type.arraySize = 1;       // recovery value; the error above already fails the build
-        }
-    }
-    return decl;
+    return ctx_.declarator(type, nameTok, std::move(init));
 }
 
 // declaration ::= type_spec IDENT [...] [ = initializer ] { "," IDENT [...] [ = initializer ] } ";"
@@ -698,7 +464,11 @@ std::unique_ptr<CompoundStmt> Parser::parseCompoundStmt() {
                 cs->stmts.push_back(std::move(s));
             }
         } catch (const ParseError&) {
-            synchronize();
+            // An error found AT this block's '}' (`return }`, `x = 1 }`) must
+            // leave the brace for the block: consuming it would keep the
+            // function open and turn everything after it into a cascade of
+            // bogus errors. The loop condition then closes the block normally.
+            if (!check(Tok::RBRACE)) synchronize();
         }
     }
     expect(Tok::RBRACE, "'}'");
@@ -707,10 +477,12 @@ std::unique_ptr<CompoundStmt> Parser::parseCompoundStmt() {
 
 bool Parser::parseLocalDeclaration(std::vector<std::unique_ptr<Stmt>>& out) {
     TypeSpec type = parseTypeSpec();
+    bool isStatic = sawStatic_;
     if (match(Tok::SEMI)) return false;     // a bare `struct S { ... };` inside a function
     int stars = parseStars();
     const Token& nameTok = expect(Tok::IDENT, "an identifier");
     for (auto& d : parseVarDeclDeclarators(type, stars, nameTok)) {
+        d->isStatic = isStatic;
         auto ds = std::make_unique<DeclStmt>();
         ds->line = d->line;
         ds->col  = d->col;
@@ -826,20 +598,21 @@ std::unique_ptr<Stmt> Parser::parseForStmt() {
             loopDecls.push_back(std::move(ds));
         }
         // parseVarDeclDeclarators consumed the ';' that ends the init clause.
-        if (!check(Tok::SEMI)) {
-            if (!check(Tok::SEMI)) cond = check(Tok::SEMI) ? nullptr : parseExpression();
-            expect(Tok::SEMI, "';'");
-            if (!check(Tok::RPAREN)) step = parseExpression();
-            expect(Tok::RPAREN, "')'");
-            auto body0 = parseStatement();
-            auto inner = std::make_unique<ForStmt>(nullptr, std::move(cond), std::move(step), std::move(body0));
-            inner->line = kw.line; inner->col = kw.col;
-            auto block = std::make_unique<CompoundStmt>();
-            block->line = kw.line; block->col = kw.col;
-            for (auto& d : loopDecls) block->stmts.push_back(std::move(d));
-            block->stmts.push_back(std::move(inner));
-            return block;
-        }
+        // (The condition may be empty: `for (int i = 0; ; i++)`. This path
+        // used to be skipped when it was, which lost the declaration and read
+        // `i++` as the condition.)
+        if (!check(Tok::SEMI)) cond = parseExpression();
+        expect(Tok::SEMI, "';'");
+        if (!check(Tok::RPAREN)) step = parseExpression();
+        expect(Tok::RPAREN, "')'");
+        auto body0 = parseStatement();
+        auto inner = std::make_unique<ForStmt>(nullptr, std::move(cond), std::move(step), std::move(body0));
+        inner->line = kw.line; inner->col = kw.col;
+        auto block = std::make_unique<CompoundStmt>();
+        block->line = kw.line; block->col = kw.col;
+        for (auto& d : loopDecls) block->stmts.push_back(std::move(d));
+        block->stmts.push_back(std::move(inner));
+        return block;
     }
 
     if (!check(Tok::SEMI)) init = parseExpression();
@@ -908,7 +681,7 @@ std::unique_ptr<Stmt> Parser::parseSwitchStmt() {
                 else if (auto s = parseStatement()) sw->cases.back().stmts.push_back(std::move(s));
             }
         } catch (const ParseError&) {
-            synchronize();
+            if (!check(Tok::RBRACE)) synchronize();   // same reason as in a compound statement
         }
     }
     expect(Tok::RBRACE, "'}'");
@@ -1161,7 +934,7 @@ std::unique_ptr<Expr> Parser::parseUnary() {
             sz->type.ptrDepth += parseStars();
             parseArrayDims(sz->type, false);
             expect(Tok::RPAREN, "')'");
-            sz->value = structs_.bytesOf(sz->type);
+            sz->value = ctx_.sizeofType(sz->type);
         } else {
             sz->operand = parseUnary();
         }
@@ -1244,8 +1017,8 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
     switch (t.type) {
         case Tok::IDENT: {
             advance();
-            auto ec = enumConsts_.find(t.lexeme);
-            if (ec != enumConsts_.end()) {
+            auto ec = ctx_.enumConsts.find(t.lexeme);
+            if (ec != ctx_.enumConsts.end()) {
                 auto lit = std::make_unique<IntLit>(ec->second);
                 lit->line = t.line; lit->col = t.col;
                 return lit;
@@ -1256,7 +1029,12 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
         }
         case Tok::INT_LIT: {
             advance();
-            auto e = std::make_unique<IntLit>(std::stoll(t.lexeme));
+            // stoull, not stoll: an unsigned literal may exceed LLONG_MAX.
+            auto e = std::make_unique<IntLit>(static_cast<long long>(std::stoull(t.lexeme)));
+            for (char ch : t.lexeme) {
+                if (ch == 'u' || ch == 'U') e->unsignedSuffix = true;
+                if (ch == 'l' || ch == 'L') e->longSuffix = true;
+            }
             e->line = t.line; e->col = t.col;
             return e;
         }

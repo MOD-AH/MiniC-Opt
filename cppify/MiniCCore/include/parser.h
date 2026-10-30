@@ -13,6 +13,7 @@
 #include "ast.h"
 #include "token.h"
 #include "diagnostic.h"
+#include "parse_context.h"
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -46,20 +47,11 @@ private:
     static constexpr int kMaxExprDepth = 256;
     int exprDepth_ = 0;
 
-    // Type-level state the grammar depends on: C cannot be parsed without
-    // knowing which identifiers are typedef names, and struct layouts must
-    // be known to size arrays and flatten brace initializers.
-    StructTable structs_;
-    std::unordered_map<std::string, TypeSpec>  typedefs_;
-    std::unordered_map<std::string, long long> enumConsts_;
-
-    // A brace initializer as written, before it is flattened against a type.
-    struct InitNode {
-        std::unique_ptr<Expr> expr;
-        std::vector<InitNode> kids;
-        bool isList = false;
-        int line = 0, col = 0;
-    };
+    // Type-level state the grammar depends on (C cannot be parsed without
+    // knowing which identifiers are typedef names) and the declaration
+    // semantics, shared with the Bison parser: see parse_context.h.
+    ParseContext ctx_{sink_};
+    using InitNode = ParseContext::InitNode;
 
     // Thrown by expect()/errorHere() after the diagnostic is recorded;
     // caught at a statement/declaration boundary to drive panic-mode
@@ -80,6 +72,7 @@ private:
     // ---- declarations (program.ebnf: declaration, var_decl, func_decl) ----
     void parseTopLevelDeclaration(std::vector<std::unique_ptr<Decl>>& out);
     TypeSpec parseTypeSpec();
+    bool sawStatic_ = false;   // set by parseTypeSpec when the specifiers included `static`
     TypeSpec parseStructSpecifier();
     void     parseEnumSpecifier();
     void     parseTypedef();
@@ -87,12 +80,7 @@ private:
     // allowEmptyFirst (parameters, `int a[] = {...}`).
     void     parseArrayDims(TypeSpec& t, bool allowEmptyFirst);
     long long parseConstInt(const char* what);
-    bool     evalConst(const Expr& e, long long& out) const;
     InitNode parseInitNode();
-    void     flattenInit(const TypeSpec& t, InitNode& init, std::vector<std::unique_ptr<Expr>>& out);
-    void     flattenOne(const TypeSpec& t, std::vector<InitNode>& kids, size_t& cur, std::vector<std::unique_ptr<Expr>>& out, int line, int col);
-    void     flattenAgg(const TypeSpec& t, std::vector<InitNode>& kids, size_t& cur, std::vector<std::unique_ptr<Expr>>& out, int line, int col);
-    void     zeroFill(const TypeSpec& t, std::vector<std::unique_ptr<Expr>>& out, int line, int col);
     std::unique_ptr<Expr> parseInitExpr();       // one assignment-expression, no comma operator
     // Consumes any run of '*' (and a `const` after each) and returns how many.
     // The count belongs to ONE declarator: in `int *p, q;` only p is a pointer.

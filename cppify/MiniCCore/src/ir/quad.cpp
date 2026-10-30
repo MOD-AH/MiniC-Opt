@@ -1,6 +1,7 @@
 // MiniC-Opt — TAC operand/quad printing, temp and label allocation
 // (Step 4: implements the pieces include/ir.h only declared.)
 #include "ir.h"
+#include "int_semantics.h"
 #include <sstream>
 
 namespace minic {
@@ -82,6 +83,10 @@ static std::string operandStr(const Operand& o) {
 
 std::string Quad::toString() const {
     std::ostringstream ss;
+    // Plain int is the overwhelmingly common case and prints bare, so int-only
+    // programs read (and diff) exactly as before typed quads; any other width
+    // or signedness is spelled out.
+    std::string tySuffix = (ty == IntTy::NONE || ty == IntTy::I32) ? "" : std::string("  :") + intTyName(ty);
     switch (op) {
         case Op::LABEL:
             ss << operandStr(result) << ":";
@@ -109,10 +114,10 @@ std::string Quad::toString() const {
             ss << operandStr(result) << " = " << operandStr(arg1);
             return ss.str();
         case Op::NEG: case Op::NOT:
-            ss << operandStr(result) << " = " << opName(op) << operandStr(arg1);
+            ss << operandStr(result) << " = " << opName(op) << operandStr(arg1) << tySuffix;
             return ss.str();
         case Op::TO_INT: case Op::TO_FLOAT:
-            ss << operandStr(result) << " = " << opName(op) << " " << operandStr(arg1);
+            ss << operandStr(result) << " = " << opName(op) << " " << operandStr(arg1) << tySuffix;
             return ss.str();
         case Op::ALLOC_ARRAY:
             ss << operandStr(result) << " = alloc[" << operandStr(arg1) << "]";
@@ -128,7 +133,7 @@ std::string Quad::toString() const {
             return ss.str();
         default:   // ADD SUB MUL DIV MOD LT LE GT GE EQ NE AND OR
             ss << operandStr(result) << " = " << operandStr(arg1) << " " << opSymbol(op)
-               << " " << operandStr(arg2);
+               << " " << operandStr(arg2) << tySuffix;
             return ss.str();
     }
 }

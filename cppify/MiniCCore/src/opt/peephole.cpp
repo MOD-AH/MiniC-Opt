@@ -109,6 +109,7 @@ public:
                "physically next block";
     }
     std::string requiresAnalysis() const override { return "none (pattern match on control transfers)"; }
+    bool preservesCFG() const override { return false; }
 
     bool run(CFG& cfg) override {
         count_ = 0;
